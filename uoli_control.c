@@ -1,4 +1,4 @@
-// MC404 p Trabalho 2 - Subcamada LoCo
+// MC404 - Trabalho 2 - Subcamada LoCo
 // Ruy Castilho Barrichelo - RA 177012
 
 

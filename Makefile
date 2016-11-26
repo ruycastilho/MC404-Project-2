@@ -1,4 +1,4 @@
-# MC404 p Trabalho 2 - Makefile
+# MC404 - Trabalho 2 - Makefile
 # Ruy Castilho Barrichelo - RA 177012
 
 all: image
