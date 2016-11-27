@@ -20,6 +20,12 @@ interrupt_vector:
 	b IRQ_HANDLER
 
 
+callback_vector:					@@@ checar isso
+.skip 56
+
+alarm_vector:
+.skip 64
+
 .org 0x100
 .text
 
@@ -34,6 +40,42 @@ interrupt_vector:
 RESET_HANDLER:
 
 
+	@@@ -------------------------- CONSTANTS ------------------------ @@@
+
+	.set MAX_CALLBACKS, 8
+	.SET MAX_ALARMS, 8
+
+	@@@ --------------------------- STACKS -------------------------- @@@
+
+	@ Sets constants as memory addresses to initialize stacks.
+	.set STACK_USER_BASE, 0x80000000
+	.set STACK_SYSTEM_BASE, 0x79000000
+
+	@ Initializes stacks for all processor modes.
+
+
+	@ USER stack.
+
+	mrs r0, cpsr				@ Reads CSPR.
+	bic r0, r0, #0x1F			@ Removes current mode (first five bits).
+	orr r0, r0, #0xCF			@ Includes new mode - System.
+								@ Also disables interruptions.
+
+	msr cpsr, r0				@ Writes the result back to cspr.	
+	ldr sp, =STACK_USER_BASE	@ Loads the address in Stack Pointer(r13).
+
+
+	@ SYSTEM stack.
+
+	mrs r0, cpsr				@ Reads CSPR.
+	bic r0, r0, #0x1F			@ Removes current mode (first five bits).
+	orr r0, r0, #0x13			@ Includes new mode - Supervisor.
+
+
+	msr cpsr, r0				@ Writes the result back to cspr.
+	ldr sp, = STACK_SYSTEM_BASE	@ Loads the address in Stack Pointer(r13_svc).
+
+
 	@@@ ----------------------------- GPT --------------------------- @@@
 
 	@ Sets constants to access GTP registers.
@@ -42,9 +84,11 @@ RESET_HANDLER:
 	.set GTP_PR, 0x4
 	.set GTP_SR, 0x8
 	.set GTP_OCR1, 0x10
+	.set GTP_OCR2, 0x14
 	.set GTP_IR, 0xC
 
 	.set TIME_SZ, 100
+	.set DIST_INTERVAL, 100				@@@ Mudar aqui
 
 	@ Loads base address to access GTP registers.
     ldr	r1, =GTP_BASE
@@ -65,8 +109,12 @@ RESET_HANDLER:
 	mov r0, #TIME_SZ		@ Configuration value - TIME_SZ cycles.
 	str r0, [r1, #GTP_OCR1]	@ Stores value in register
 
-	@ Sets GPT_IR to one(1).
-	mov r0, #1				@ Configuration value - One.
+	@ Moves to GPT_OCR2 the value to be counted.
+	mov r0, #DIST_INTERVAL	@ Configuration value - DIST_INTERVAL cycles.
+	str r0, [r1, #GTP_OCR2]	@ Stores value in register
+
+	@ Sets GPT_IR to three(3).
+	mov r0, #3				@ Configuration value - OCR1 and OCR2 enabled.
 	str r0, [r1, #GTP_IR]	@ Stores value in register
 
 	@@@ ---------------------------- TZIC  -------------------------- @@@
@@ -131,16 +179,32 @@ ET_TZIC:
 
 	@ Configures GDIR.
 
-	mov r0, #0					@ Cleans r0.
-	orr r0, #GPIO_GDIR_CONFIG	@ Copies I/0 settings to r0.
+	LDR r0,= GPIO_GDIR_CONFIG	@ Loads I/0 settings to r0.
 	ldr r0, [r1, #GPIO_GDIR]	@ Configures GDIR.
- 
-	ldr sp,=STACK		@ Stores the address to the stack pile in sp.
 
-	movs pc, lr
+
+	@ Sets mode as USER.
+
+	mrs r0, cpsr					@ Reads CSPR.
+	bic r0, r0, #0x1F				@ Removes current mode.
+	orr r0, r0, #0x10				@ Includes new mode -User.
+
+	msr cpsr, r0					@ Writes the result back to cspr.
+
+	@@@ Duvida, como vai pro programa .c?
+
 
 @ Syscall handler.
 SYSCALL_HANDLER:
+
+	@@ disable nas interrupcoes?
+
+	ldmfd sp!, {r1-r11, lr}		@ Pushes registers into the stack.
+
+	mrs r0, cpsr				@ Reads CSPR.
+	orr r0, r0, #0x1F			@ Includes new mode - System.
+
+	msr cpsr, r0				@ Writes the result back to cspr.
 
 	@ Determination of current syscall.
 	cmp r7, #16						@ If is is read_sonar. 
@@ -237,7 +301,6 @@ set_motor_speed_syscall:
 set_motor_speed_write:
 
 	@@@ CHECAR VELOCIDADE INVALIDA
-	@@@ PODE USAR r1 r2 r3??
 
 	ldr r2,=GPIO_BASE			@ Loads GPIO's base address.
 	str r0, [r2, #GPIO_DR]		@ Stores the bit mask in the DR register.
@@ -284,16 +347,45 @@ set_alarm_syscall:
 
 syscall_end:
 
-	movs pc, lr			@ Returns to user mode and to user's code.
+	stmfd sp!, {r1-r11, lr}		@ Pops registers from the stack.
+
+	movs pc, lr					@ Returns to user mode and to user's code.
 
 @ Interruption Request Handler
 IRQ_HANDLER:
 
+	@ Disables new interruptions while request is handled.
+
+	mrs r0, cpsr					@ Reads CSPR.
+	orr r0, r0, #0x80				@ Keeps current mode, disables I bit.
+
+	msr cpsr, r0					@ Writes the result back to cspr.
+
+
+	@ Checks which Output Compare Channel is activated.
+	stdfm sp!, {r0-r11, r14}		@ Pushes registers into the stack.
+
 	@ Loads base address to access GTP registers.
-    ldr	r1, =GTP_BASE
+	ldr r0,=GTP_BASE
+
+	@ Loads GTP_SR's address.
+	ldr r0, [r0, GTP_SR]
+
+	cmp r0, #1
+	beq output_compare_channel_1
+
+output_compare_channel_2:
+
+	@ Sets GPT_SR (status) to one(2).
+	mov r0, #0x2			@ Writes 1 to clear OF2.
+	str	r0, [r1, #GTP_SR]	@ Stores value in register
+
+	b request_handler_end
+
+output_compare_channel_1:
 
 	@ Sets GPT_SR (status) to one(1).
-	mov r0, #0x1			@ Configuration value - One
+	mov r0, #0x1			@ Writes 1 to clear OF1.
 	str	r0, [r1, #GTP_SR]	@ Stores value in register
 
 	@ Updates counter.
@@ -305,6 +397,9 @@ IRQ_HANDLER:
 	sub lr, lr, #4			@ Return address correction.
 							@ ( LR = PC + 4 ) instead of ( LR = PC + 8 ).
 
+request_handler_end:
+	ldmfd sp!, {r1-r11, lr}	@ Pops registers from the stack.
+
 	movs pc, lr				@ Returns.
 
 @ ----------------- DATA ----------------- @
@@ -312,5 +407,3 @@ IRQ_HANDLER:
 .data
 @ Label to system time.
 SYSTEM_TIME:
-.skip 4
-STACK:

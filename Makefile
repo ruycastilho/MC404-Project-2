@@ -1,23 +1,47 @@
-# MC404 - Trabalho 2 - Makefile
-# Ruy Castilho Barrichelo - RA 177012
+# ----------------------------------------
+# Disciplina: MC404 - 1o semestre de 2015
+# Professor: Edson Borin
+#
+# Descrição: Makefile para o segundo trabalho 
+# ----------------------------------------
 
-all: image
+# ----------------------------------
+# SOUL object files -- Add your SOUL object files here 
+SOUL_OBJS=soul.o 
 
-assemble:
-	$(CROSS_COMPILE)gcc uoli_control.c -S -o uoli_control.s
-	$(CROSS_COMPILE)as uoli_lib.s -o uoli_lib
-	$(CROSS_COMPILE)as uoli_control.s -o uoli_control
+# ----------------------------------
+# Compiling/Assembling/Linking Tools and flags
+AS=arm-eabi-as
+AS_FLAGS=-g
 
-link:
-	$(CROSS_COMPILE)ld uoli_control.o uoli_lib.o -o robot_ctrl -Ttext =0x77803000 -Tdata=0x77801900
+CC=arm-eabi-gcc
+CC_FLAGS=-g
 
-image:
-	$(MKSD) --so $(OS) --user robot_ctrl
+LD=arm-eabi-ld
+LD_FLAGS=-g
 
-simulate:
-	$(ARMSIM_PLAYER) --rom=$(DUMBOOT) --sd=disk.img
+# ----------------------------------
+# Default rule
+all: disk.img
 
-player:
-	$(PLAYER) $(PLAYER_WORLDS)/simple.cfg
+# ----------------------------------
+# Generic Rules
+%.o: %.s
+	$(AS) $(AS_FLAGS) $< -o $@
 
+%.o: %.c
+	$(CC) $(CC_FLAGS) -c $< -o $@
 
+# ----------------------------------
+# Specific Rules
+SOUL.x: $(SOUL_OBJS)
+	$(LD) $^ -o $@ $(LD_FLAGS) --section-start=.iv=0x778005e0 -Ttext=0x77800700 -Tdata=0x77801800 -e 0x778005e0
+
+LOCO.x: loco.o bico.o
+	$(LD) $^ -o $@ $(LD_FLAGS) -Ttext=0x77802000
+
+disk.img: SOUL.x LOCO.x
+	mksd.sh --so SOUL.x --user LOCO.x
+
+clean:
+	rm -f SOUL.x LOCO.x disk.img *.o
