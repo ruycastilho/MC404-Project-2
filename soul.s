@@ -19,13 +19,6 @@ interrupt_vector:
 .org 0x18
 	b IRQ_HANDLER
 
-
-callback_vector:					@@@ checar isso
-.skip 56
-
-alarm_vector:
-.skip 64
-
 .org 0x100
 .text
 
@@ -44,17 +37,20 @@ RESET_HANDLER:
 
 	.set MAX_CALLBACKS, 8
 	.SET MAX_ALARMS, 8
+	.set TIME_SZ, 100
+	.set DIST_INTERVAL, 100				@@@ Mudar aqui
 
 	@@@ --------------------------- STACKS -------------------------- @@@
 
 	@ Sets constants as memory addresses to initialize stacks.
-	.set STACK_USER_BASE, 0x80000000
+	.set STACK_USER_BASE, 	0x80000000
 	.set STACK_SYSTEM_BASE, 0x79000000
+	.set STACK_IRQ_BASE,	0x78000000
 
 	@ Initializes stacks for all processor modes.
 
 
-	@ USER stack.
+	@ USER's stack.
 
 	mrs r0, cpsr				@ Reads CSPR.
 	bic r0, r0, #0x1F			@ Removes current mode (first five bits).
@@ -64,8 +60,16 @@ RESET_HANDLER:
 	msr cpsr, r0				@ Writes the result back to cspr.	
 	ldr sp, =STACK_USER_BASE	@ Loads the address in Stack Pointer(r13).
 
+	@ IRQ's stack.
 
-	@ SYSTEM stack.
+	mrs r0, cpsr				@ Reads CSPR.
+	bic r0, r0, #0x1F			@ Removes current mode (first five bits).
+	orr r0, r0, #0x12			@ Includes new mode - IRQ..
+
+	msr cpsr, r0				@ Writes the result back to cspr.	
+	ldr sp, =STACK_IRQ_BASE		@ Loads the address in Stack Pointer(r13).
+
+	@ SYSTEM's stack.
 
 	mrs r0, cpsr				@ Reads CSPR.
 	bic r0, r0, #0x1F			@ Removes current mode (first five bits).
@@ -86,9 +90,6 @@ RESET_HANDLER:
 	.set GTP_OCR1, 0x10
 	.set GTP_OCR2, 0x14
 	.set GTP_IR, 0xC
-
-	.set TIME_SZ, 100
-	.set DIST_INTERVAL, 100				@@@ Mudar aqui
 
 	@ Loads base address to access GTP registers.
     ldr	r1, =GTP_BASE
@@ -113,8 +114,8 @@ RESET_HANDLER:
 	mov r0, #DIST_INTERVAL	@ Configuration value - DIST_INTERVAL cycles.
 	str r0, [r1, #GTP_OCR2]	@ Stores value in register
 
-	@ Sets GPT_IR to three(3).
-	mov r0, #3				@ Configuration value - OCR1 and OCR2 enabled.
+	@ Sets GPT_IR to one(1).
+	mov r0, #1				@ Configuration value - OCR1 enabled.
 	str r0, [r1, #GTP_IR]	@ Stores value in register
 
 	@@@ ---------------------------- TZIC  -------------------------- @@@
@@ -191,7 +192,14 @@ ET_TZIC:
 
 	msr cpsr, r0					@ Writes the result back to cspr.
 
-	@@@ Duvida, como vai pro programa .c?
+	b main							@ Branches into main function.
+
+
+@ Just in case it happens.
+main_returned:
+
+	b main_returned
+
 
 
 @ Syscall handler.
@@ -227,6 +235,9 @@ SYSCALL_HANDLER:
 
 	cmp r8, #22						@ If it is set_alarm.
 	beq set_alarm_syscall
+
+	cmp r8, #23						@ If it is return_syscall.
+	beq return_syscall
 
 	b syscall_end					@ If syscall id is not valid.
 
@@ -270,12 +281,27 @@ register_proximity_callback_syscall:
 
 	bgt syscall_end
 
+	@ Checks the quantity of callbacks.
+	ldr r3,=callback_quantity
+	ldr r4, [r3]
+	cmp r3, #MAX_CALLBACKS
+
+	moveq r0, #-2			@ If the amount is already maxed, returns -2 in r0.
+	beq syscall_end
+
+
+	@ adicionar callback
+
+
 	b syscall_end
 
 @ SYSCALL 18
 set_motor_speed_syscall:
 
-    ldmfd sp!, {r0, r1}  	@ Pops the syscall's parameters.
+    ldmfd sp!, {r0}  	@ Pops the syscall's parameters.
+
+	@ Checks if speed is valid.
+		
 
 	@ Checks if id is valid.
 	@ Tests if id < 0 and if id > 1
@@ -288,7 +314,6 @@ set_motor_speed_syscall:
 	moveq r0, #1, lsl #18		@ If r0 = 0, sets pin 18 as 1.
 	orreq r0, r0, r1, lsl #19	@ And sets the bits related to the speed to
 								@ the correct pins (19-24)
-
 	beq set_motor_speed_write	@ And skips the next verification.
 
 	cmp	 r0, #1.
@@ -299,8 +324,6 @@ set_motor_speed_syscall:
 	bgt syscall_end
 
 set_motor_speed_write:
-
-	@@@ CHECAR VELOCIDADE INVALIDA
 
 	ldr r2,=GPIO_BASE			@ Loads GPIO's base address.
 	str r0, [r2, #GPIO_DR]		@ Stores the bit mask in the DR register.
@@ -328,12 +351,9 @@ get_time_syscall:
 set_time_syscall:
 
     ldmfd sp!, {r0}  		@ Pops the syscall's parameters.
-	stmfd sp!, {r1}			@ Pushes r1 into the stack.
 
 	ldr r1, = SYSTEM_TIME	@ r1 contains the address to SYSTEM_TIME.
 	str r0, [r1]			@ New time is stored in said address.
-
-	ldmfd sp!, {r1}			@ Pops r1 out of the stack.
 
 	b syscall_end
 
@@ -342,14 +362,27 @@ set_alarm_syscall:
 
     ldmfd sp!, {r0, r1}  	@ Pops the syscall's parameters.
 
+	b syscall_end
 
+@ SYSCALL 23 - Required to return to supervisor mode after user's function
+@ was called.
+return_syscall:
 
+	@ precisa fazer algo pra voltar pro lugar do alarm/callback
 
 syscall_end:
 
+	@ Returns to supervisor mode, so that the correct stack is used to return the
+	@ saved state.
+
+	mrs r0, cpsr				@ Reads CSPR.
+	orr r0, r0, #0x13			@ Includes new mode - Supervisor.
+
+	msr cpsr, r0				@ Writes the result back to cspr.
+
 	stmfd sp!, {r1-r11, lr}		@ Pops registers from the stack.
 
-	movs pc, lr					@ Returns to user mode and to user's code.
+	movs pc, lr					@ Returns to previous mode and to previous code.
 
 @ Interruption Request Handler
 IRQ_HANDLER:
@@ -362,27 +395,13 @@ IRQ_HANDLER:
 	msr cpsr, r0					@ Writes the result back to cspr.
 
 
-	@ Checks which Output Compare Channel is activated.
-	stdfm sp!, {r0-r11, r14}		@ Pushes registers into the stack.
+	stdfm sp!, {r0-r11, lr}		@ Pushes registers into the stack.
 
 	@ Loads base address to access GTP registers.
 	ldr r0,=GTP_BASE
 
 	@ Loads GTP_SR's address.
 	ldr r0, [r0, GTP_SR]
-
-	cmp r0, #1
-	beq output_compare_channel_1
-
-output_compare_channel_2:
-
-	@ Sets GPT_SR (status) to one(2).
-	mov r0, #0x2			@ Writes 1 to clear OF2.
-	str	r0, [r1, #GTP_SR]	@ Stores value in register
-
-	b request_handler_end
-
-output_compare_channel_1:
 
 	@ Sets GPT_SR (status) to one(1).
 	mov r0, #0x1			@ Writes 1 to clear OF1.
@@ -397,7 +416,29 @@ output_compare_channel_1:
 	sub lr, lr, #4			@ Return address correction.
 							@ ( LR = PC + 4 ) instead of ( LR = PC + 8 ).
 
-request_handler_end:
+
+	@ Checks and updates alarms.
+
+	@ Considerar alarmes que nao tem tempo =0
+	@ tirar 1 de cada tempo de alarme. Se der 0, avisar.
+
+	@ Checks and updates callbacks.
+
+	ldr r4,=callback_counter
+	ldr r5, [r4]
+	add r5, r5, #1			@ Updates counter.
+	cmp r5, #DIST_INTERVAL	@ Compares counter to DIST_INTERVAL.
+
+	moveq r5, #0			@ If counter reached DIST_INTERVAL, it becomes 0.
+	str r5, [r4]			@ Stores new value in callback_counter.
+
+	bne irq_handler_end		@ If counter is different to DIST_INTERVAL,
+							@ skips to end. Else, checks callbacks
+
+
+	@ checar callbacks
+
+irq_handler_end:
 	ldmfd sp!, {r1-r11, lr}	@ Pops registers from the stack.
 
 	movs pc, lr				@ Returns.
@@ -407,3 +448,26 @@ request_handler_end:
 .data
 @ Label to system time.
 SYSTEM_TIME:
+.skip 4
+
+@ Auxiliar counter (clock related).
+callback_counter:
+.skip 4
+
+@ Callback and alarm counters.
+callback_quantity:
+.skip 4
+alarm_quantity:
+.skip 4
+
+@ Callback vector.
+@ 8 structs that contain: 
+@ Sonar id (1 byte), distance (2 bytes), function pointer (4 bytes)
+callback_vector:
+.skip 56
+
+@ Alarm vector.
+@ 8 structs that contain: 
+@ Time period(4 bytes), function pointer (4 bytes)
+alarm_vector:
+.skip 64
