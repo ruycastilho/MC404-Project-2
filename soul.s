@@ -36,8 +36,11 @@ RESET_HANDLER:
 
 	.set MAX_CALLBACKS, 0x8
 	.set MAX_ALARMS, 	0x8
+	.set CALLBACK_SIZE, 0x7
+	.set ALARM_SIZE,	0x8
 	.set TIME_SZ, 		0x30D40		@ In this case, each cycle lasts 1 microsec.
 	.set DIST_INTERVAL, 0x64
+	.set USER_CODE_START, 0x77802000
 
 	@@@ --------------------------- STACKS -------------------------- @@@
 
@@ -63,15 +66,15 @@ RESET_HANDLER:
 	msr cpsr, r0				@ Writes the result back to cspr.	
 	ldr sp, =STACK_IRQ_BASE		@ Loads the address in Stack Pointer(r13).
 
-	@ SYSTEM's stack.
+	@ SUPERVISOR's stack.
 
 	mrs r0, cpsr				@ Reads CSPR.
 	bic r0, r0, #0x1F			@ Removes current mode (first five bits).
 	orr r0, r0, #0x13			@ Includes new mode - Supervisor.
 
 
-	msr cpsr, r0				@ Writes the result back to cspr.
-	ldr sp, = STACK_SYSTEM_BASE	@ Loads the address in Stack Pointer(r13_svc).
+	msr cpsr, r0					@ Writes the result back to cspr.
+	ldr sp, = STACK_SUPERVISOR_BASE	@ Loads the address in Stack Pointer(r13_svc).
 
 
 	@@@ ----------------------------- GPT --------------------------- @@@
@@ -186,14 +189,8 @@ ET_TZIC:
 
 	msr cpsr, r0					@ Writes the result back to cspr.
 
-	b main							@ Branches into main function.
-
-
-@ Just in case it happens.
-main_returned:
-
-	b main_returned
-
+	@ Branches to user's code.
+	ldr pc, = USER_CODE_START
 
 
 @ Syscall handler.
@@ -228,9 +225,6 @@ SYSCALL_HANDLER:
 	cmp r8, #22						@ If it is set_alarm.
 	beq set_alarm_syscall
 
-	cmp r8, #23						@ If it is return_syscall.
-	beq return_syscall
-
 	b syscall_end					@ If syscall id is not valid.
 
 @ SYSCALL 18
@@ -239,15 +233,12 @@ read_sonar_syscall:
     ldmfd sp!, {r0}  		@ Pops the syscall's parameters.
 
 	@ Checks if id is valid.
-	cmp r0, #0				@ Tests if id < 0 and if id > 15
-	movlt r0, #-1
-							@ If yes (for any of the two), returns r0 = -1
-	blt syscall_end
+	@ Tests if id < 0 and if id > 15. (Treated as unsigned)
+	@ If yes (for any of the two), returns r0 = -1
 
-	cmp	 r0, #15.
-	movgt r0, #-1
-
-	bgt syscall_end
+	cmp r0, #15
+	movhi r0, #-1
+	bhi syscall_end
 
 	@ Sets the multiplexers to reach the correct sonar.
 	@ Pins 2-4 of GDIR.
@@ -267,7 +258,7 @@ read_sonar_syscall:
 	str r2, [r1, GPIO_DR]
 
 	@ 15ms delay. Waits for 20 clock cycles, that equals 20ms (safety measure).
-	mov r3, #15
+
 	ldr r2, = SYSTEM_TIME
 	ldr r3, [r2]			@ Stores the system time in this moment.
 
@@ -314,14 +305,35 @@ register_proximity_callback_syscall:
 	@ Checks the quantity of callbacks.
 	ldr r3,=callback_quantity
 	ldr r4, [r3]
-	cmp r3, #MAX_CALLBACKS
+	cmp r4, #MAX_CALLBACKS
 
-	moveq r0, #-2			@ If the amount is already maxed, returns -2 in r0.
+	moveq r0, #-2				@ If the amount is already maxed, returns -2 in r0.
 	beq syscall_end
 
+	ldr r5,=callback_vector		@ Loads the address to callback_vector.
+	mov r6, r4					@ Copies the amount of callbacks.
+	add r6, r6, #1				@ Adds the new callback.
 
-	@ adicionar callback
+register_callback_find_last:
 
+	cmp r4, #0
+	sub r4, r4, #CALLBACK_SIZE		@ Moves the pointer forward until it reaches
+									@ the last callback added in the vector,
+									@ i.e., until the quantity reaches 0.
+	addgt r5, r5, #CALLBACK_SIZE
+
+	bgt register_callback_find_last
+
+	str r6, [r3]					@ Stores the new amount of callbacks
+
+	strb r0, [r5], #1				@ Stores the id (byte) in the callback, 
+									@ Updates address.
+	strh r1, [r5], #2				@ Stores the distance (2bytes) in the callback,
+									@ Updates address.		
+	str r2, [r5], #2				@ Stores the pointer (4bytes) in the callback,
+									@ Updates address.		
+
+	mov r0, #0						@ Parameters are valid. Returns 0.
 
 	b syscall_end
 
@@ -331,31 +343,18 @@ set_motor_speed_syscall:
     ldmfd sp!, {r0}  	@ Pops the syscall's parameters.
 
 	@ Checks if id is valid.
-	@ Tests if id < 0 and if id > 1
+	@ Tests if id < 0 and if id > 1. (Treated as unsigned)
 	@ If yes (for any of the two), returns r0 = -1
 
-	cmp r0, #0
-	movlt r0, #-1
-	blt syscall_end
-
-	beq set_motor_speed_validation	@ And skips the next verification.
-
-	cmp	 r0, #1.
-	movgt r0, #-1
-
-	bgt syscall_end
-
-set_motor_speed_validation:
+	cmp r0, #1
+	movhi r0, #-1
+	bhi syscall_end
 
 	@ Checks if speed is valid.
 
-	cmp r1, #63			@ Checks if speed is higher than 63 (6 bits).
-	movgt r0, #-2													@@@@ DUVIDA, eh gt?
-	bgt syscall_end		@ Skips to syscall_end, if it isn't valid.
-
-	cmp r1, #0			@ Checks if speed is lower than 0.
-	movlt r0, #-2
-	blt syscall_end		@ Skips to syscall_end, if it isn't valid.
+	cmp r1, #63			@ Checks if speed uses more than 6 bits.
+	movhi r0, #-1		@ Whether its negative or higher than 63.
+	bhi syscall_end		@ Skips to syscall_end, if it isn't valid.
 
 	@ Stores results.
 
@@ -388,17 +387,13 @@ set_motors_speed_syscall:
 
 	@ For motor0:
 
-	cmp r0, #63			@ Checks if speed is higher than 63 (6 bits).
-	movgt r0, #-1													@@@@ DUVIDA, eh gt?
-	bgt syscall_end		@ Skips to syscall_end, if it isn't valid.
+	cmp r0, #63			@ Checks if speed uses more than 6 bits.
+	movhi r0, #-1		@ Whether its negative or higher than 63.
+	bhi syscall_end		@ Skips to syscall_end, if it isn't valid.
 
-	cmp r0, #0			@ Checks if speed is lower than 0.
-	movlt r0, #-1
-	blt syscall_end		@ Skips to syscall_end, if it isn't valid.
-
-	cmp r1, #63			@ Checks if speed is higher than 63 (6 bits).
-	movgt r0, #-2													@@@@ DUVIDA, eh gt?
-	bgt syscall_end		@ Skips to syscall_end, if it isn't valid.
+	cmp r1, #63			@ Checks if speed uses more than 6 bits.
+	movhi r0, #-2		@ Whether its negative or higher than 63.
+	bhi syscall_end		@ Skips to syscall_end, if it isn't valid.
 
 	cmp r1, #0			@ Checks if speed is lower than 0.
 	movlt r0, #-2
@@ -448,13 +443,35 @@ set_alarm_syscall:
 
     ldmfd sp!, {r0, r1}  	@ Pops the syscall's parameters.
 
-	b syscall_end
+	@ Checks the quantity of alarms.
+	ldr r2,=alarm_quantity
+	ldr r3, [r2]
+	cmp r3, #MAX_ALARMS
 
-@ SYSCALL 23 - Required to return to supervisor mode after user's function
-@ was called.
-return_syscall:
+	moveq r0, #-1				@ If the amount is already maxed, returns -1 in r0.
+	beq syscall_end
 
-	@ precisa fazer algo pra voltar pro lugar do alarm/callback
+	@ Checks if time is valid.
+	ldr r6,=SYSTEM_TIME			@ Loads address to system time.
+	ldr r6, [r6]				@ Loads the system time.
+
+	cmp r1, r6					@ Compares given time to system time.
+	movlt r0, #-2				@ If it is in the past, returns -2.			
+	blt syscall_end
+
+	ldr r4,=alarm_vector		@ Loads the address to alarm_vector.
+	add r3, r3, #1				@ Adds the new alarm.
+	str r3, [r2]				@ Stores new amount in alarm_quantity.
+
+alarm_find_unused:
+	ldr r3, [r4]				@ Loads first alarm.
+	cmp r3, #-1					@ Checks if is unused. ( time = -1 ).
+
+	addgt r4, #ALARM_SIZE		@ If is in use, updates address.
+	bgt alarm_find_unused
+
+	str r1, [r4]				@ Stores time value in new alarm.
+	str r0, [r4, #4]			@ Stores pointer in new alarm.
 
 syscall_end:
 
@@ -469,6 +486,11 @@ syscall_end:
 	stmfd sp!, {r1-r11, lr}		@ Pops registers from the stack.
 
 	movs pc, lr					@ Returns to previous mode and to previous code.
+
+
+	@@@ alarms: saber qnts pela quantidade, só checar o que nao for time=zero
+	@@@ adicionar se nao tiver max, e no primeiro que for zero, no vetor;
+
 
 @ Interruption Request Handler
 IRQ_HANDLER:
@@ -505,13 +527,79 @@ IRQ_HANDLER:
 
 	@ Checks and updates alarms.
 
-	@ Considerar alarmes que nao tem tempo =0
-	@ tirar 1 de cada tempo de alarme. Se der 0, avisar.
+	ldr r4,= alarm_quantity	@ Loads address to amount of alarms.
+	ldr r4, [r4]			@ Loads amount of alarms.
+	cmp r4, #0
+
+	beq irq_checks_callbacks
+
+	ldr r5, = alarm_vector	@ Loads address to alarm vector.
+	ldr r3, = MAX_ALARMS	@ Loads the maximum amount of alarms
+	mov r3, [r3]			@ Initializes counter with maximum amount of alarms.
+
+irq_alarm_loop:
+
+	sub r3, r3, #1				@ Updates counter.
+	ldr r6, [r5]				@ Loads first alarm struct.
+	cmp r6, #-1
+
+	addeq r5, r5, #ALARM_SIZE	@ If it is unused, skips to the next.
+	beq irq_alarm_loop
+
+	sub r6, r0					@ Compares to system time (in r0).
+	cmp r6, #0					@ Checks if it is zero.
+	moveq r6, r6, #-1			@ If it is, changes to time and stores -1.
+
+	ldr r6, [r5]				@ Stores updated time.
+
+	beq alarm_reached_zero		@ Also, the user function is called.
+
+	cmp r3, #0
+	bgt irq_alarm_loop			@ If there are more alarms, returns to the
+								@ alarm loop.
+
+alarm_reached_zero:
+
+	@ Changes mode to System mode.
+
+	mrs r0, cpsr				@ Reads CSPR.
+	orr r0, r0, #0x1F			@ Includes new mode - System.
+	
+	msr cpsr, r0				@ Writes the result back to cspr.
+
+	stmfd sp!, {lr}				@ Stores system's lr.
+
+	@ Branches to user's function.
+
+	ldr r4, [r5, #4]			@ Loads pointer to function.
+	blx	r4						@ Branches with link to return.
+								@ User's code will return to this point,
+								@ since user's lr was changed.
+
+	ldmfd sp!, {lr}				@ Restores system's lr.
+
+	@ Changes mode to Supervisor mode.
+
+	mrs r0, cpsr				@ Reads CSPR.
+	bic r0, r0, #0x1F			@ Removes current mode (first five bits).
+	orr r0, r0, #0x13			@ Includes new mode - Supervisor.
+	
+	msr cpsr, r0				@ Writes the result back to cspr.
+
+	cmp r3, #0
+	bgt irq_alarm_loop			@ If there are more alarms, returns to the
+								@ alarm loop.
+
+irq_checks_callbacks:
 
 	@ Checks and updates callbacks.
 
-	ldr r4,=callback_counter
+	ldr r4,=callback_quantity	@ Loads the amount of callbacks.
 	ldr r5, [r4]
+
+	cmp r5, #0					@ If it is zero, skips the verifications.
+	beq irq_handler_end
+
 	add r5, r5, #1			@ Updates counter.
 	cmp r5, #DIST_INTERVAL	@ Compares counter to DIST_INTERVAL.
 
@@ -537,13 +625,13 @@ SYSTEM_TIME:
 .skip 4
 
 STACK_USER_BASE:
-.skip 50
+.skip 0x50
 
-STACK_SYSTEM_BASE:
-.skip 50
+STACK_SUPERVISOR_BASE:
+.skip 0x30
 
 STACK_IRQ_BASE:
-.skip 50
+.skip 0x30
 
 @ Auxiliar counter (clock related).
 callback_counter:
@@ -559,10 +647,11 @@ alarm_quantity:
 @ 8 structs that contain: 
 @ Sonar id (1 byte), distance (2 bytes), function pointer (4 bytes)
 callback_vector:
-.skip 56
+.skip #MAX_CALLBACKS*#CALLBACK_SIZE
 
 @ Alarm vector.
 @ 8 structs that contain: 
-@ Time period(4 bytes), function pointer (4 bytes)
+@ Time period(4 bytes), function pointer (4 bytes) in this order.
+@ Initializes with -1 in every field, to indicate is unused.
 alarm_vector:
-.skip 64
+.fill #MAX_ALARMS*2, #4, #-1
