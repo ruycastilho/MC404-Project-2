@@ -32,20 +32,14 @@ interrupt_vector:
 @ Reset command handler.
 RESET_HANDLER:
 
-
 	@@@ -------------------------- CONSTANTS ------------------------ @@@
 
-	.set MAX_CALLBACKS, 8
-	.SET MAX_ALARMS, 8
-	.set TIME_SZ, 100
-	.set DIST_INTERVAL, 100				@@@ Mudar aqui
+	.set MAX_CALLBACKS, 0x8
+	.set MAX_ALARMS, 	0x8
+	.set TIME_SZ, 		0x30D40		@ In this case, each cycle lasts 1 microsec.
+	.set DIST_INTERVAL, 0x64
 
 	@@@ --------------------------- STACKS -------------------------- @@@
-
-	@ Sets constants as memory addresses to initialize stacks.
-	.set STACK_USER_BASE, 	0x80000000
-	.set STACK_SYSTEM_BASE, 0x79000000
-	.set STACK_IRQ_BASE,	0x78000000
 
 	@ Initializes stacks for all processor modes.
 
@@ -205,8 +199,6 @@ main_returned:
 @ Syscall handler.
 SYSCALL_HANDLER:
 
-	@@ disable nas interrupcoes?
-
 	ldmfd sp!, {r1-r11, lr}		@ Pushes registers into the stack.
 
 	mrs r0, cpsr				@ Reads CSPR.
@@ -260,8 +252,46 @@ read_sonar_syscall:
 	@ Sets the multiplexers to reach the correct sonar.
 	@ Pins 2-4 of GDIR.
 
-	mov r0, r0, lsl #2		@ Shifts bits to match pins.
+	ldr r1,=GPIO_BASE
+	ldr r2, [r1, GPIO_DR]	@ Loads the DR register.
 
+	bic r2, r2, #3C			@ Clears the MUXs bits.
+	orr r2, r2, r0, lsl #2	@ Sets the bits corresponding to the id, in the 
+							@ correct bits. r0 already contains the id,
+							@ so it's just shifted to the left.
+
+	str r2, [r1, GPIO_DR]	@ Stores the result in DR.
+
+	orr r2, r2, #2			@ Sets the trigger pin.
+
+	str r2, [r1, GPIO_DR]
+
+	@ 15ms delay. Waits for 20 clock cycles, that equals 20ms (safety measure).
+	mov r3, #15
+	ldr r2, = SYSTEM_TIME
+	ldr r3, [r2]			@ Stores the system time in this moment.
+
+sonar_trigger_delay:
+
+	ldr r4, [r2]
+	sub r4, r4, r3			@ Subtracts new time from old one. Sets flags.
+	cmp r4, #20
+
+	blt sonar_trigger_delay	@ If difference is less than 20, keeps waiting.
+
+	bic r2, r2, #2			@ Clears the second bit.
+	str r2, [r1, GPIO_DR]	@ Sets trigger as 0.
+
+
+	@ Checks if flag pin was set to 1.
+sonar_flag:
+	ldr r2, [r1, GPIO_PSR]	@ Loads the PSR register.
+
+	mov r0, r2, lsr	#6		@ Copies sonar data bits to r0.
+	and r2, r2, #1			@ Bitmask to keep only bit 0. (flag)
+	cmp r2, #1				@ Checks if flag is set.
+
+	bne sonar_flag
 
 	b syscall_end
 
@@ -300,9 +330,6 @@ set_motor_speed_syscall:
 
     ldmfd sp!, {r0}  	@ Pops the syscall's parameters.
 
-	@ Checks if speed is valid.
-		
-
 	@ Checks if id is valid.
 	@ Tests if id < 0 and if id > 1
 	@ If yes (for any of the two), returns r0 = -1
@@ -311,22 +338,44 @@ set_motor_speed_syscall:
 	movlt r0, #-1
 	blt syscall_end
 
-	moveq r0, #1, lsl #18		@ If r0 = 0, sets pin 18 as 1.
-	orreq r0, r0, r1, lsl #19	@ And sets the bits related to the speed to
-								@ the correct pins (19-24)
-	beq set_motor_speed_write	@ And skips the next verification.
+	beq set_motor_speed_validation	@ And skips the next verification.
 
 	cmp	 r0, #1.
 	movgt r0, #-1
-	moveq r0, #1, lsl #25		@ If r0 = 1, sets pin 25 as 1.
-	orreq r0, r0, r1, lsl #26	@ And shifts the bits related to the speed to
-								@ the correct pins (26-31)
+
 	bgt syscall_end
 
-set_motor_speed_write:
+set_motor_speed_validation:
+
+	@ Checks if speed is valid.
+
+	cmp r1, #63			@ Checks if speed is higher than 63 (6 bits).
+	movgt r0, #-2													@@@@ DUVIDA, eh gt?
+	bgt syscall_end		@ Skips to syscall_end, if it isn't valid.
+
+	cmp r1, #0			@ Checks if speed is lower than 0.
+	movlt r0, #-2
+	blt syscall_end		@ Skips to syscall_end, if it isn't valid.
+
+	@ Stores results.
 
 	ldr r2,=GPIO_BASE			@ Loads GPIO's base address.
+	ldr r3, [r2, GPIO_DR]		@ Loads GPIO_DR register.
+	
+	@ Sets speed pins.
+	cmp r0, #0					@ If r0 = 0,
+	biceq r3, r3, #0x1F80000	@ Clears speed pins.
+	orreq r0, r3, r1 lsl #19	@ Shifts the bits related to the
+								@ speed to  the correct pins (19-24).
+
+								@ If r0 = 1,
+	bicgt r3, r3, #0xFC000000	@ Clears speed pins.
+	orrgt r0, r3, r1, lsl #26	@ If r0 = 1, shifts the bits related to the
+								@ speed to the correct pins (26-31).
+
 	str r0, [r2, #GPIO_DR]		@ Stores the bit mask in the DR register.
+
+	mov r0, #0					@ Parameters are valid.
 
 	b syscall_end
 
@@ -335,7 +384,44 @@ set_motors_speed_syscall:
 
     ldmfd sp!, {r0, r1}  	@ Pops the syscall's parameters.
 
-	@@@ CHECAR VELOCIDADE INVALIDA
+	@ Checks if speeds are valid.
+
+	@ For motor0:
+
+	cmp r0, #63			@ Checks if speed is higher than 63 (6 bits).
+	movgt r0, #-1													@@@@ DUVIDA, eh gt?
+	bgt syscall_end		@ Skips to syscall_end, if it isn't valid.
+
+	cmp r0, #0			@ Checks if speed is lower than 0.
+	movlt r0, #-1
+	blt syscall_end		@ Skips to syscall_end, if it isn't valid.
+
+	cmp r1, #63			@ Checks if speed is higher than 63 (6 bits).
+	movgt r0, #-2													@@@@ DUVIDA, eh gt?
+	bgt syscall_end		@ Skips to syscall_end, if it isn't valid.
+
+	cmp r1, #0			@ Checks if speed is lower than 0.
+	movlt r0, #-2
+	blt syscall_end		@ Skips to syscall_end, if it isn't valid.
+
+	@ Stores results.
+
+	ldr r2,=GPIO_BASE			@ Loads GPIO's base address.
+	ldr r3, [r2, GPIO_DR]		@ Loads GPIO_DR register.
+
+	bic r3, r3, #0xFDF80000		@ Clears speed pins.
+
+	@ Sets speed pins.
+
+	orr r3, r3, r0 lsl #19		@ Shifts the bits related to the
+								@ speed of motor0 to the correct pins (19-24).
+
+	orr r3, r3, r1, lsl #26		@ Shifts the bits related to the
+								@ speed of motor1 to the correct pins (26-31).
+
+	str r3, [r2, #GPIO_DR]		@ Stores the bit mask in the DR register.
+
+	mov r0, #0					@ Parameters are valid.
 
 	b syscall_end
 
@@ -449,6 +535,15 @@ irq_handler_end:
 @ Label to system time.
 SYSTEM_TIME:
 .skip 4
+
+STACK_USER_BASE:
+.skip 50
+
+STACK_SYSTEM_BASE:
+.skip 50
+
+STACK_IRQ_BASE:
+.skip 50
 
 @ Auxiliar counter (clock related).
 callback_counter:
