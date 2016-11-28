@@ -49,8 +49,44 @@ int _start() {
 	set_motors_speed(&motor0, &motor1);
 	
 		
+	do {
+		distances[3] = read_sonar(3);
+		distances[4] = read_sonar(4);
+		
+		if ( distances[3] < 1000 && distances[3] < distances[4] ) {
+				motor0.speed = 0;
+				motor1.speed = 25;
+				set_motors_speed(&motor0, &motor1);
+	
+				do {
 
-	distances[4] = read_sonar(4);
+					distances[3] = read_sonar(3);
+					distances[4] = read_sonar(4);
+				} while ( distances[3] < 1000 && distances[4] < 1000 );
+
+		}
+
+
+		else if ( distances[4] < 1000 ) {
+
+				motor0.speed = 25;
+				motor1.speed = 0;
+				set_motors_speed(&motor0, &motor1);
+
+				do {
+
+					distances[3] = read_sonar(3);
+					distances[4] = read_sonar(4);
+
+				} while ( distances[3] < 1000 && distances[4] < 1000 );
+
+		}
+
+	}while ( 1 );
+
+			motor0.speed = 0;
+			motor1.speed = 0;
+			set_motors_speed(&motor0, &motor1);	
 
 while(1){
 	}	

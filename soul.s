@@ -32,11 +32,12 @@ RESET_HANDLER:
 	.set MAX_ALARMS, 				0x8
 	.set CALLBACK_SIZE,			 	0x7
 	.set ALARM_SIZE,				0x8
-	.set TIME_SZ, 					0x6B	@ = 107. In this case, each cycle lasts 1 microsec.
+	.set TIME_SZ, 					0x1A1F8	@ = 107. In this case, each cycle lasts 1 microsec.
 	.set DIST_INTERVAL, 			0x64
 	.set USER_CODE_START, 			0x77802000
 
 	.set CLEAR_BOTH_MOTORS_SPEEDS, 	0xFFFC0000
+	.set SONAR_DATA_READ_BITMASK, 	0xFFF
 
 	@@@ ------------------------------------------------------------- @@@
 
@@ -96,7 +97,7 @@ RESET_HANDLER:
 	str	r0, [r1, #GTP_PR]	@ Stores value in register
 
 	@ Moves to GPT_OCR1 the value to be counted.
-	mov r0, #TIME_SZ		@ Configuration value - TIME_SZ cycles.
+	ldr r0, =TIME_SZ		@ Configuration value - TIME_SZ cycles.
 	str r0, [r1, #GTP_OCR1]	@ Stores value in register
 
 	@ Sets GPT_IR to one(1).
@@ -240,16 +241,16 @@ read_sonar_syscall:
 
 	@ 15ms delay. Waits for 20 clock cycles, that equals 20ms (safety measure).
 
-	ldr r2, = SYSTEM_TIME
-	ldr r3, [r2]			@ Loads the system time in this moment.
+	ldr r5, = SYSTEM_TIME
+	ldr r3, [r5]			@ Loads the system time in this moment.
 
 sonar_trigger_delay:
 
-	ldr r4, [r2]
+	ldr r4, [r5]
 	sub r4, r4, r3			@ Subtracts new time from old one. Sets flags.
 	cmp r4, #20
 
-	bgt sonar_trigger_delay	@ If difference is less than 20, keeps waiting.
+	blo sonar_trigger_delay	@ If difference is less than 20, keeps waiting.
 
 	bic r2, r2, #2			@ Clears the second bit.
 	str r2, [r1, #GPIO_DR]	@ Sets trigger as 0.
@@ -257,14 +258,18 @@ sonar_trigger_delay:
 
 	@ Checks if flag pin was set to 1.
 sonar_flag:
-	ldr r2, [r1, #GPIO_PSR]	@ Loads the PSR register.
+	ldr r2, [r1, #GPIO_DR]	@ Loads the DR register.
 
-	mov r0, r2, lsr	#6		@ Copies sonar data bits to r0.
+	mov r0, r2				@ Copies bits to r0.
 	and r2, r2, #1			@ Bitmask to keep only bit 0. (flag)
 	cmp r2, #1				@ Checks if flag is set.
 
 	bne sonar_flag
+	lsr r0, r0, #6			@ Shifts bits.
 
+	ldr r1,= SONAR_DATA_READ_BITMASK
+	and r0, r0, r1			@ Bitmask to keep only 12 bits.
+	
 	b syscall_end
 
 @ SYSCALL 17
