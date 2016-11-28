@@ -46,6 +46,9 @@ disk.img: SOUL.x LOCO.x
 simulate:
 	$(ARMSIM_PLAYER) --rom=$(DUMBOOT) --sd=disk.img
 
+test:
+	$(ARMSIM) -g --rom=$(DUMBOOT) --sd=disk.img
+
 player:
 	$(PLAYER) $(PLAYER_WORLDS)/simple.cfg
 

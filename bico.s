@@ -31,7 +31,7 @@ set_motor_speed:
 	mov r7, #18				@ Syscall to set_motor_speed.
 	stmfd sp!, {r0, r1}		@ Pushes parameters to stack.
 	svc 0x0					
-
+    ldmfd sp!, {r0, r1}  	@ Pops the syscall's parameters.
 
     ldmfd sp!, {r7, pc}  	@ Restore the registers and return.
 
@@ -76,7 +76,9 @@ setup_end:
 	mov r7, #19				@ Syscall to set_motors_speed.
 	stmfd sp!, {r0, r1}		@ Pushes parameters to stack.
 	svc 0x0	
-		
+
+    ldmfd sp!, {r0, r1}  	@ Pops the syscall's parameters.
+
     ldmfd sp!, {r7, pc}		@ Restore the registers and return.
 
 @ ------------------------ SONARS ------------------------ @
@@ -92,13 +94,14 @@ setup_end:
 .align 4
 read_sonar:
 
-    stmfd sp!, {r7, lr}		@ Save the callee-save registers.
+    stmfd sp!, {r7, r11, lr}		@ Save the callee-save registers.
 
-	mov r7, #16				@ Syscall to read_sonar.
-	stmfd sp!, {r0}			@ Pushes parameters to stack.
+	mov r7, #16						@ Syscall to read_sonar.
+	stmfd sp!, {r0}					@ Pushes parameters to stack.
 	svc 0x0					
+    ldmfd sp!, {r11}		  		@ Pops the syscall's parameters.
 
-    ldmfd sp!, {r7, pc}		@ Restore the registers and return.
+    ldmfd sp!, {r7, r11, pc}		@ Restore the registers and return.
 
 
 @ 
@@ -114,7 +117,7 @@ read_sonar:
 .align 4
 read_sonars:
  
-    stmfd sp!, {r4-r7, lr}			@ Save the callee-save registers.
+    stmfd sp!, {r4-r11, lr}			@ Save the callee-save registers.
 	mov r6, r0						@ Declares a counter that begins in 'start'.
 	mov r5, r2						@ Saves array address in r5.
 	mov r4, r1						@ Saves 'end' in r4.
@@ -124,10 +127,11 @@ loop:
 	mov r7, #16					@ Syscall to read_sonar.
 	stmfd sp!, {r0}				@ Pushes parameters to stack.
 	svc 0x0					
-
+    ldmfd sp!, {r11}  			@ Pops the syscall's parameters.
 
 								@@@ duvida nessa lsl #1 ou #2
-	str r0, [r5, r6, lsl #1]	@ Stores value read from sonar in the correct array
+
+	str r0, [r5, r6, lsl #2]	@ Stores value read from sonar in the correct array
 								@ position. Index determined by: counter*4 (shifted).
 
 	add r6, r6, #1				@ Updates counter.
@@ -164,6 +168,7 @@ register_proximity_callback:
 	mov r7, #17				@ Syscall to register_proximity_callback.
 	stmfd sp!, {r0-r2}		@ Pushes parameters to stack.
 	svc 0x0					
+    ldmfd sp!, {r0-r2}  	@ Pops the syscall's parameters.
 
 	ldmfd sp!, {r7, pc} 	@ Restore the registers and return.
 
@@ -186,6 +191,7 @@ add_alarm:
 	mov r7, #22				@ Syscall to set_alarm.
 	stmfd sp!, {r0, r1}		@ Pushes parameters to stack.
 	svc 0x0					
+    ldmfd sp!, {r0, r1}  	@ Pops the syscall's parameters.
 
 	ldmfd sp!, {r7, pc} 	@ Restore the registers and return.
 
@@ -226,6 +232,7 @@ set_time:
 	mov r7, #21					@ Syscall to set_time.
 	stmfd sp!, {r0}				@ Pushes parameters to stack.
 	svc 0x0		
+    ldmfd sp!, {r0}  			@ Pops the syscall's parameters.
 
 	ldmfd sp!, {pc} 			@ Restore the registers and return.
 

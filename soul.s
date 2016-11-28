@@ -13,7 +13,8 @@ _start:
 interrupt_vector:
 
     b RESET_HANDLER
-    
+   
+.org 0x08
  	b SYSCALL_HANDLER
  	
 .org 0x18
@@ -22,60 +23,53 @@ interrupt_vector:
 .org 0x100
 .text
 
-	@ Sets system time to zero.
-    ldr r2, =SYSTEM_TIME
-    mov r0,#0
-    str r0,[r2]
-
-
-
 @ Reset command handler.
 RESET_HANDLER:
 
 	@@@ -------------------------- CONSTANTS ------------------------ @@@
 
-	.set MAX_CALLBACKS, 0x8
-	.set MAX_ALARMS, 	0x8
-	.set CALLBACK_SIZE, 0x7
-	.set ALARM_SIZE,	0x8
-	.set TIME_SZ, 		0x6B	@ = 107. In this case, each cycle lasts 1 microsec.
-	.set DIST_INTERVAL, 0x64
-	.set USER_CODE_START, 0x77802000
+	.set MAX_CALLBACKS, 			0x8
+	.set MAX_ALARMS, 				0x8
+	.set CALLBACK_SIZE,			 	0x7
+	.set ALARM_SIZE,				0x8
+	.set TIME_SZ, 					0x6B	@ = 107. In this case, each cycle lasts 1 microsec.
+	.set DIST_INTERVAL, 			0x64
+	.set USER_CODE_START, 			0x77802000
 
-	.set CLEAR_BOTH_MOTORS_SPEEDS, 0xFDF80000
+	.set CLEAR_BOTH_MOTORS_SPEEDS, 	0xFFFC0000
+
+	@@@ ------------------------------------------------------------- @@@
+
+    @ Sets interrupt table base address on coprocessor 15 - Copied from the lab page.
+    ldr r0, =interrupt_vector
+    mcr p15, 0, r0, c12, c0, 0
+
+	@ Sets the system time to zero.
+    ldr r2, =SYSTEM_TIME
+    mov r0,#0
+    str r0,[r2]
 
 	@@@ --------------------------- STACKS -------------------------- @@@
 
-	@ Initializes stacks for all processor modes.
-
+	@ Initializes stacks for all modes.
 
 	@ USER's stack.
 
-	mrs r0, cpsr				@ Reads CSPR.
-	bic r0, r0, #0x1F			@ Removes current mode (first five bits).
-	orr r0, r0, #0xCF			@ Includes new mode - System.
+	msr cpsr_c, #0xDF			@ Includes new mode - System.
 								@ Also disables interruptions.
-
-	msr cpsr, r0				@ Writes the result back to cspr.	
+	
 	ldr sp, =STACK_USER_BASE	@ Loads the address in Stack Pointer(r13).
 
 	@ IRQ's stack.
 
-	mrs r0, cpsr				@ Reads CSPR.
-	bic r0, r0, #0x1F			@ Removes current mode (first five bits).
-	orr r0, r0, #0x12			@ Includes new mode - IRQ..
-
-	msr cpsr, r0				@ Writes the result back to cspr.	
+	msr cpsr_c, #0x12			@ Includes new mode - IRQ.
+	
 	ldr sp, =STACK_IRQ_BASE		@ Loads the address in Stack Pointer(r13).
 
 	@ SUPERVISOR's stack.
 
-	mrs r0, cpsr				@ Reads CSPR.
-	bic r0, r0, #0x1F			@ Removes current mode (first five bits).
-	orr r0, r0, #0x13			@ Includes new mode - Supervisor.
+	msr cpsr_c, #0x13			@ Includes new mode - Supervisor.
 
-
-	msr cpsr, r0					@ Writes the result back to cspr.
 	ldr sp, = STACK_SUPERVISOR_BASE	@ Loads the address in Stack Pointer(r13_svc).
 
 
@@ -92,10 +86,6 @@ RESET_HANDLER:
 
 	@ Loads base address to access GTP registers.
     ldr	r1, =GTP_BASE
-
-    @ Sets interrupt table base address on coprocessor 15.
-    ldr r0, =interrupt_vector
-    mcr p15, 0, r0, c12, c0, 0
     
     @ Enables GTP_CR and configures clock_src to peripheral mode.
 	mov r0, #0x00000041		@ Configuration value
@@ -108,10 +98,6 @@ RESET_HANDLER:
 	@ Moves to GPT_OCR1 the value to be counted.
 	mov r0, #TIME_SZ		@ Configuration value - TIME_SZ cycles.
 	str r0, [r1, #GTP_OCR1]	@ Stores value in register
-
-	@ Moves to GPT_OCR2 the value to be counted.
-	mov r0, #DIST_INTERVAL	@ Configuration value - DIST_INTERVAL cycles.
-	str r0, [r1, #GTP_OCR2]	@ Stores value in register
 
 	@ Sets GPT_IR to one(1).
 	mov r0, #1				@ Configuration value - OCR1 enabled.
@@ -135,7 +121,7 @@ ET_TZIC:
     ldr	r1, =TZIC_BASE
 
     @ Configures interruption 39 from GPT as unsafe
-    mov	r0, #(1 << 7)
+    mov	r0, #(1 << 7)	
     str	r0, [r1, #TZIC_INTSEC1]
 
     @ Enables interruption 39 (GPT)
@@ -172,24 +158,20 @@ ET_TZIC:
 	.set GPIO_DR, 0x0
 	.set GPIO_GDIR, 0x4
 	.set GPIO_PSR, 0x8
-	.set GPIO_GDIR_CONFIG, 0xF8007FFF		@ I/O settings in hexadecimal.
+	.set GPIO_GDIR_CONFIG, 0xFFFC003E		@ I/O settings in hexadecimal.
 
 
 	ldr r1, =GPIO_BASE
 
 	@ Configures GDIR.
 
-	LDR r0,= GPIO_GDIR_CONFIG	@ Loads I/0 settings to r0.
-	ldr r0, [r1, #GPIO_GDIR]	@ Configures GDIR.
+	ldr r0,= GPIO_GDIR_CONFIG	@ Loads I/0 settings to r0.
+	str r0, [r1, #GPIO_GDIR]	@ Configures GDIR.
 
 
 	@ Sets mode as USER.
 
-	mrs r0, cpsr					@ Reads CSPR.
-	bic r0, r0, #0x1F				@ Removes current mode.
-	orr r0, r0, #0x10				@ Includes new mode -User.
-
-	msr cpsr, r0					@ Writes the result back to cspr.
+	msr cpsr_c, #0x10			@ Includes new mode - User.
 
 	@ Branches to user's code.
 	ldr pc, = USER_CODE_START
@@ -198,12 +180,9 @@ ET_TZIC:
 @ Syscall handler.
 SYSCALL_HANDLER:
 
-	ldmfd sp!, {r1-r11, lr}		@ Pushes registers into the stack.
+	stmfd sp!, {r1-r11, lr}		@ Pushes registers into the stack.
 
-	mrs r0, cpsr				@ Reads CSPR.
-	orr r0, r0, #0x1F			@ Includes new mode - System.
-
-	msr cpsr, r0				@ Writes the result back to cspr.
+	msr cpsr_c, #0x1F			@ Includes new mode - System.
 
 	@ Determination of current syscall.
 	cmp r7, #16						@ If is is read_sonar. 
@@ -229,10 +208,10 @@ SYSCALL_HANDLER:
 
 	b syscall_end					@ If syscall id is not valid.
 
-@ SYSCALL 18
+@ SYSCALL 16
 read_sonar_syscall:
 
-    ldmfd sp!, {r0}  		@ Pops the syscall's parameters.
+    ldr r0, [sp]  					@ Loads the syscall's parameters.
 
 	@ Checks if id is valid.
 	@ Tests if id < 0 and if id > 15. (Treated as unsigned)
@@ -262,7 +241,7 @@ read_sonar_syscall:
 	@ 15ms delay. Waits for 20 clock cycles, that equals 20ms (safety measure).
 
 	ldr r2, = SYSTEM_TIME
-	ldr r3, [r2]			@ Stores the system time in this moment.
+	ldr r3, [r2]			@ Loads the system time in this moment.
 
 sonar_trigger_delay:
 
@@ -270,7 +249,7 @@ sonar_trigger_delay:
 	sub r4, r4, r3			@ Subtracts new time from old one. Sets flags.
 	cmp r4, #20
 
-	blt sonar_trigger_delay	@ If difference is less than 20, keeps waiting.
+	bgt sonar_trigger_delay	@ If difference is less than 20, keeps waiting.
 
 	bic r2, r2, #2			@ Clears the second bit.
 	str r2, [r1, #GPIO_DR]	@ Sets trigger as 0.
@@ -291,7 +270,9 @@ sonar_flag:
 @ SYSCALL 17
 register_proximity_callback_syscall:
 
-    ldmfd sp!, {r0-r2}  	@ Pops the syscall's parameters.
+    ldr r0, [sp]  					@ Loads the syscall's parameters.
+	ldr r1, [sp, #4]
+	ldr r2, [sp, #8]
 
 	@ Checks if id is valid.
 	cmp r0, #0				@ Tests if id < 0 and if id > 15
@@ -342,7 +323,8 @@ register_callback_find_last:
 @ SYSCALL 18
 set_motor_speed_syscall:
 
-    ldmfd sp!, {r0}  	@ Pops the syscall's parameters.
+    ldr r0, [sp]  					@ Loads the syscall's parameters.
+	ldr r1, [sp, #4]
 
 	@ Checks if id is valid.
 	@ Tests if id < 0 and if id > 1. (Treated as unsigned)
@@ -383,7 +365,8 @@ set_motor_speed_syscall:
 @ SYSCALL 19
 set_motors_speed_syscall:
 
-    ldmfd sp!, {r0, r1}  	@ Pops the syscall's parameters.
+    ldr r0, [sp]  					@ Loads the syscall's parameters.
+	ldr r1, [sp, #4]
 
 	@ Checks if speeds are valid.
 
@@ -434,7 +417,7 @@ get_time_syscall:
 @ SYSCALL 21
 set_time_syscall:
 
-    ldmfd sp!, {r0}  		@ Pops the syscall's parameters.
+    ldr r0, [sp]  					@ Loads the syscall's parameters.
 
 	ldr r1, = SYSTEM_TIME	@ r1 contains the address to SYSTEM_TIME.
 	str r0, [r1]			@ New time is stored in said address.
@@ -444,7 +427,8 @@ set_time_syscall:
 @ SYSCALL 22
 set_alarm_syscall:
 
-    ldmfd sp!, {r0, r1}  	@ Pops the syscall's parameters.
+    ldr r0, [sp]  					@ Loads the syscall's parameters.
+	ldr r1, [sp, #4]
 
 	@ Checks the quantity of alarms.
 	ldr r2,=alarm_quantity
@@ -481,12 +465,9 @@ syscall_end:
 	@ Returns to supervisor mode, so that the correct stack is used to return the
 	@ saved state.
 
-	mrs r0, cpsr				@ Reads CSPR.
-	orr r0, r0, #0x13			@ Includes new mode - Supervisor.
+	msr cpsr_c, #0x13			@ Includes new mode - Supervisor.
 
-	msr cpsr, r0				@ Writes the result back to cspr.
-
-	stmfd sp!, {r1-r11, lr}		@ Pops registers from the stack.
+	ldmfd sp!, {r1-r11, lr}		@ Pops registers from the stack.
 
 	movs pc, lr					@ Returns to previous mode and to previous code.
 
@@ -498,15 +479,11 @@ syscall_end:
 @ Interruption Request Handler
 IRQ_HANDLER:
 
+	stmfd sp!, {r0-r11, lr}			@ Pushes registers into the stack.
+
 	@ Disables new interruptions while request is handled.
-
-	mrs r0, cpsr					@ Reads CSPR.
-	orr r0, r0, #0x80				@ Keeps current mode, disables I bit.
-
-	msr cpsr, r0					@ Writes the result back to cspr.
-
-
-	stmfd sp!, {r0-r11, lr}		@ Pushes registers into the stack.
+	msr cpsr_c, #0x92				@ Includes new mode - IRQ.	
+									@ Also, disables regular interruptions.
 
 	@ Loads base address to access GTP registers.
 	ldr r0,=GTP_BASE
@@ -524,8 +501,11 @@ IRQ_HANDLER:
     add r0, r0, #1			@ Increments value by 1.
     str r0,[r2]				@ Stores updated value.
 
-	sub lr, lr, #4			@ Return address correction.
-							@ ( LR = PC + 4 ) instead of ( LR = PC + 8 ).
+
+
+
+	b irq_handler_end
+
 
 
 	@ Checks and updates alarms.
@@ -565,10 +545,7 @@ alarm_reached_zero:
 
 	@ Changes mode to System mode.
 
-	mrs r0, cpsr				@ Reads CSPR.
-	orr r0, r0, #0x1F			@ Includes new mode - System.
-	
-	msr cpsr, r0				@ Writes the result back to cspr.
+	msr cpsr_c, #0x1F			@ Includes new mode - System.
 
 	stmfd sp!, {lr}				@ Stores system's lr.
 
@@ -583,11 +560,7 @@ alarm_reached_zero:
 
 	@ Changes mode to Supervisor mode.
 
-	mrs r0, cpsr				@ Reads CSPR.
-	bic r0, r0, #0x1F			@ Removes current mode (first five bits).
-	orr r0, r0, #0x13			@ Includes new mode - Supervisor.
-	
-	msr cpsr, r0				@ Writes the result back to cspr.
+	msr cpsr_c, #0x13			@ Includes new mode - Supervisor.
 
 	cmp r3, #0
 	bgt irq_alarm_loop			@ If there are more alarms, returns to the
@@ -616,7 +589,10 @@ irq_checks_callbacks:
 	@ checar callbacks
 
 irq_handler_end:
-	ldmfd sp!, {r1-r11, lr}	@ Pops registers from the stack.
+	ldmfd sp!, {r0-r11, lr}	@ Pops registers from the stack.
+
+	sub lr, lr, #4			@ Return address correction.
+							@ ( LR = PC + 4 ) instead of ( LR = PC + 8 ).
 
 	movs pc, lr				@ Returns.
 
@@ -629,7 +605,7 @@ SYSTEM_TIME:
 
 @ Stacks
 
-.skip 0x50
+.skip 0x100
 STACK_USER_BASE:
 
 .skip 0x30
@@ -640,13 +616,13 @@ STACK_IRQ_BASE:
 
 @ Auxiliar counter (clock related).
 callback_counter:
-.skip 4
+.word 0
 
 @ Callback and alarm counters.
 callback_quantity:
-.skip 4
+.word 0
 alarm_quantity:
-.skip 4
+.word 0
 
 @ Callback vector.
 @ 8 structs that contain: 
