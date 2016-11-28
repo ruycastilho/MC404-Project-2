@@ -38,9 +38,11 @@ RESET_HANDLER:
 	.set MAX_ALARMS, 	0x8
 	.set CALLBACK_SIZE, 0x7
 	.set ALARM_SIZE,	0x8
-	.set TIME_SZ, 		0x30D40		@ In this case, each cycle lasts 1 microsec.
+	.set TIME_SZ, 		0x6B	@ = 107. In this case, each cycle lasts 1 microsec.
 	.set DIST_INTERVAL, 0x64
 	.set USER_CODE_START, 0x77802000
+
+	.set CLEAR_BOTH_MOTORS_SPEEDS, 0xFDF80000
 
 	@@@ --------------------------- STACKS -------------------------- @@@
 
@@ -173,7 +175,7 @@ ET_TZIC:
 	.set GPIO_GDIR_CONFIG, 0xF8007FFF		@ I/O settings in hexadecimal.
 
 
-	ldr r1, #GPIO_BASE
+	ldr r1, =GPIO_BASE
 
 	@ Configures GDIR.
 
@@ -244,18 +246,18 @@ read_sonar_syscall:
 	@ Pins 2-4 of GDIR.
 
 	ldr r1,=GPIO_BASE
-	ldr r2, [r1, GPIO_DR]	@ Loads the DR register.
+	ldr r2, [r1, #GPIO_DR]	@ Loads the DR register.
 
-	bic r2, r2, #3C			@ Clears the MUXs bits.
+	bic r2, r2, #0x3C		@ Clears the MUXs bits.
 	orr r2, r2, r0, lsl #2	@ Sets the bits corresponding to the id, in the 
 							@ correct bits. r0 already contains the id,
 							@ so it's just shifted to the left.
 
-	str r2, [r1, GPIO_DR]	@ Stores the result in DR.
+	str r2, [r1, #GPIO_DR]	@ Stores the result in DR.
 
 	orr r2, r2, #2			@ Sets the trigger pin.
 
-	str r2, [r1, GPIO_DR]
+	str r2, [r1, #GPIO_DR]
 
 	@ 15ms delay. Waits for 20 clock cycles, that equals 20ms (safety measure).
 
@@ -271,12 +273,12 @@ sonar_trigger_delay:
 	blt sonar_trigger_delay	@ If difference is less than 20, keeps waiting.
 
 	bic r2, r2, #2			@ Clears the second bit.
-	str r2, [r1, GPIO_DR]	@ Sets trigger as 0.
+	str r2, [r1, #GPIO_DR]	@ Sets trigger as 0.
 
 
 	@ Checks if flag pin was set to 1.
 sonar_flag:
-	ldr r2, [r1, GPIO_PSR]	@ Loads the PSR register.
+	ldr r2, [r1, #GPIO_PSR]	@ Loads the PSR register.
 
 	mov r0, r2, lsr	#6		@ Copies sonar data bits to r0.
 	and r2, r2, #1			@ Bitmask to keep only bit 0. (flag)
@@ -297,7 +299,7 @@ register_proximity_callback_syscall:
 							@ If yes (for any of the two), returns r0 = -1
 	blt syscall_end
 
-	cmp	 r0, #15.
+	cmp	r0, #15
 	movgt r0, #-1
 
 	bgt syscall_end
@@ -359,12 +361,12 @@ set_motor_speed_syscall:
 	@ Stores results.
 
 	ldr r2,=GPIO_BASE			@ Loads GPIO's base address.
-	ldr r3, [r2, GPIO_DR]		@ Loads GPIO_DR register.
+	ldr r3, [r2, #GPIO_DR]		@ Loads GPIO_DR register.
 	
 	@ Sets speed pins.
 	cmp r0, #0					@ If r0 = 0,
 	biceq r3, r3, #0x1F80000	@ Clears speed pins.
-	orreq r0, r3, r1 lsl #19	@ Shifts the bits related to the
+	orreq r0, r3, r1, lsl #19	@ Shifts the bits related to the
 								@ speed to  the correct pins (19-24).
 
 								@ If r0 = 1,
@@ -402,13 +404,14 @@ set_motors_speed_syscall:
 	@ Stores results.
 
 	ldr r2,=GPIO_BASE			@ Loads GPIO's base address.
-	ldr r3, [r2, GPIO_DR]		@ Loads GPIO_DR register.
+	ldr r3, [r2, #GPIO_DR]		@ Loads GPIO_DR register.
 
-	bic r3, r3, #0xFDF80000		@ Clears speed pins.
+	ldr r4,= CLEAR_BOTH_MOTORS_SPEEDS
+	bic r3, r3, r4				@ Clears speed pins.
 
 	@ Sets speed pins.
 
-	orr r3, r3, r0 lsl #19		@ Shifts the bits related to the
+	orr r3, r3, r0, lsl #19		@ Shifts the bits related to the
 								@ speed of motor0 to the correct pins (19-24).
 
 	orr r3, r3, r1, lsl #26		@ Shifts the bits related to the
@@ -503,13 +506,13 @@ IRQ_HANDLER:
 	msr cpsr, r0					@ Writes the result back to cspr.
 
 
-	stdfm sp!, {r0-r11, lr}		@ Pushes registers into the stack.
+	stmfd sp!, {r0-r11, lr}		@ Pushes registers into the stack.
 
 	@ Loads base address to access GTP registers.
 	ldr r0,=GTP_BASE
 
 	@ Loads GTP_SR's address.
-	ldr r0, [r0, GTP_SR]
+	ldr r0, [r0, #GTP_SR]
 
 	@ Sets GPT_SR (status) to one(1).
 	mov r0, #0x1			@ Writes 1 to clear OF1.
@@ -535,7 +538,7 @@ IRQ_HANDLER:
 
 	ldr r5, = alarm_vector	@ Loads address to alarm vector.
 	ldr r3, = MAX_ALARMS	@ Loads the maximum amount of alarms
-	mov r3, [r3]			@ Initializes counter with maximum amount of alarms.
+	ldr r3, [r3]			@ Initializes counter with maximum amount of alarms.
 
 irq_alarm_loop:
 
@@ -548,7 +551,7 @@ irq_alarm_loop:
 
 	sub r6, r0					@ Compares to system time (in r0).
 	cmp r6, #0					@ Checks if it is zero.
-	moveq r6, r6, #-1			@ If it is, changes to time and stores -1.
+	moveq r6, #-1				@ If it is, changes to time and stores -1.
 
 	ldr r6, [r5]				@ Stores updated time.
 
@@ -624,14 +627,16 @@ irq_handler_end:
 SYSTEM_TIME:
 .skip 4
 
-STACK_USER_BASE:
+@ Stacks
+
 .skip 0x50
+STACK_USER_BASE:
 
+.skip 0x30
 STACK_SUPERVISOR_BASE:
-.skip 0x30
 
-STACK_IRQ_BASE:
 .skip 0x30
+STACK_IRQ_BASE:
 
 @ Auxiliar counter (clock related).
 callback_counter:
@@ -647,11 +652,11 @@ alarm_quantity:
 @ 8 structs that contain: 
 @ Sonar id (1 byte), distance (2 bytes), function pointer (4 bytes)
 callback_vector:
-.skip #MAX_CALLBACKS*#CALLBACK_SIZE
+.skip MAX_CALLBACKS*CALLBACK_SIZE
 
 @ Alarm vector.
 @ 8 structs that contain: 
 @ Time period(4 bytes), function pointer (4 bytes) in this order.
 @ Initializes with -1 in every field, to indicate is unused.
 alarm_vector:
-.fill #MAX_ALARMS*2, #4, #-1
+.fill MAX_ALARMS*2, 4, -1

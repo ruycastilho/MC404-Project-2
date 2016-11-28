@@ -6,11 +6,6 @@
 @ ----------------------------------- CODE ----------------------------------- @
 .text
 
-@ CONSTANTS
-.set MAX_CALLBACKS, 8
-.set MAX_ALARMS, 8
-.set DIST_INTERVAL, 1200
-
 @ ------------------------ MOTORS ------------------------ @
 
 @
@@ -214,7 +209,7 @@ get_time:
 
 	str r0, [r4]				@ Stores the system time in the received variable.
 
-	ldmfd sp! {r4, r7, pc} 		@ Restore the registers and return.
+	ldmfd sp!, {r4, r7, pc} 		@ Restore the registers and return.
 
 
 @
@@ -226,13 +221,13 @@ get_time:
 .align 4
 set_time:
 
-	stmfd sp!, {lr}			@ Saves the callee-save registers.
+	stmfd sp!, {lr}				@ Saves the callee-save registers.
 
-	mov r7, #21				@ Syscall to set_time.
-	stmfd sp!, {r0}			@ Pushes parameters to stack.
+	mov r7, #21					@ Syscall to set_time.
+	stmfd sp!, {r0}				@ Pushes parameters to stack.
 	svc 0x0		
 
-	ldmfd sp! {pc} 			@ Restore the registers and return.
+	ldmfd sp!, {pc} 			@ Restore the registers and return.
 
 @ ----------------------------------- DATA ----------------------------------- @
 .data

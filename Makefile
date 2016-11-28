@@ -43,5 +43,11 @@ LOCO.x: loco.o bico.o
 disk.img: SOUL.x LOCO.x
 	mksd.sh --so SOUL.x --user LOCO.x
 
+simulate:
+	$(ARMSIM_PLAYER) --rom=$(DUMBOOT) --sd=disk.img
+
+player:
+	$(PLAYER) $(PLAYER_WORLDS)/simple.cfg
+
 clean:
 	rm -f SOUL.x LOCO.x disk.img *.o

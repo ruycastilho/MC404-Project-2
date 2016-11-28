@@ -17,23 +17,37 @@ void segueParede(short* distances, motor_cfg_t* motor0, motor_cfg_t* motor1);
 void buscaParede(short* distances, motor_cfg_t* motor0, motor_cfg_t* motor1);
 void reverse(short* distances, motor_cfg_t* motor0, motor_cfg_t* motor1);
 
-int main() {
+int a =1;
 
-	short distances[16];
+void teste() {
+	a=0;
+	
+}
+
+int _start() {
+
+
+	//short distances[16];
 	motor_cfg_t motor0;
 	motor_cfg_t motor1;
 
 
-	motor0.id = 0;
-	motor0.speed = 0;
-	motor1.id = 1;
-	motor1.speed = 0;
+	//motor0.id = 0;
+	//motor0.speed = 0;
+	//motor1.id = 1;
+	//motor1.speed = 0;
 
-	set_motors_speed(&motor0, &motor1);
+	//set_motors_speed(&motor0, &motor1);
 
-	buscaParede(distances, &motor0, &motor1);
+	//buscaParede(distances, &motor0, &motor1);
 
 
+
+		motor0.speed = 25;
+		motor1.speed = 25;
+		set_motors_speed(&motor0, &motor1);
+
+while(1){}
 	return 0;
 }
 
