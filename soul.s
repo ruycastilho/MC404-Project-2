@@ -31,8 +31,8 @@ RESET_HANDLER:
 	.set MAX_CALLBACKS, 			0x8
 	.set MAX_ALARMS, 				0x8
 	.set CALLBACK_SIZE,			 	0x7
-	.set ALARM_SIZE,				0x8
-	.set TIME_SZ, 					0x1A1F8	@ = 107. In this case, each cycle lasts 1 microsec.
+	.set ALARM_SIZE,				0x8				@@@@@@@@ !!!!!
+	.set TIME_SZ, 					0x64	@ 1A1F8 = 107k. In this case, each cycle lasts 1 microsec.
 	.set DIST_INTERVAL, 			0x64
 	.set USER_CODE_START, 			0x77802000
 
@@ -169,7 +169,6 @@ ET_TZIC:
 	ldr r0,= GPIO_GDIR_CONFIG	@ Loads I/0 settings to r0.
 	str r0, [r1, #GPIO_GDIR]	@ Configures GDIR.
 
-
 	@ Sets mode as USER.
 
 	msr cpsr_c, #0x10			@ Includes new mode - User.
@@ -228,27 +227,40 @@ read_sonar_syscall:
 	ldr r1,=GPIO_BASE
 	ldr r2, [r1, #GPIO_DR]	@ Loads the DR register.
 
-	bic r2, r2, #0x3C		@ Clears the MUXs bits.
+	bic r2, r2, #0x3E		@ Clears the MUXs and trigger bits.
 	orr r2, r2, r0, lsl #2	@ Sets the bits corresponding to the id, in the 
 							@ correct bits. r0 already contains the id,
 							@ so it's just shifted to the left.
 
 	str r2, [r1, #GPIO_DR]	@ Stores the result in DR.
 
-	orr r2, r2, #2			@ Sets the trigger pin.
-
-	str r2, [r1, #GPIO_DR]
 
 	@ 15ms delay. Waits for 20 clock cycles, that equals 20ms (safety measure).
 
 	ldr r5, = SYSTEM_TIME
 	ldr r3, [r5]			@ Loads the system time in this moment.
 
+sonar_mux_delay:
+
+	ldr r4, [r5]
+	sub r4, r4, r3			@ Subtracts new time from old one.
+	cmp r4, #15
+
+	blo sonar_mux_delay	@ If difference is less than 20, keeps waiting.
+
+	orr r2, r2, #2			@ Sets the trigger pin as 1.
+
+	str r2, [r1, #GPIO_DR]
+
+	@ 15ms delay. Waits for 20 clock cycles, that equals 20ms (safety measure).
+
+	ldr r3, [r5]			@ Loads the system time in this moment.
+
 sonar_trigger_delay:
 
 	ldr r4, [r5]
-	sub r4, r4, r3			@ Subtracts new time from old one. Sets flags.
-	cmp r4, #20
+	sub r4, r4, r3			@ Subtracts new time from old one.
+	cmp r4, #15
 
 	blo sonar_trigger_delay	@ If difference is less than 20, keeps waiting.
 
@@ -258,6 +270,19 @@ sonar_trigger_delay:
 
 	@ Checks if flag pin was set to 1.
 sonar_flag:
+
+	@ 10ms delay. Waits for 10 clock cycles, that equals 10ms.
+
+	ldr r3, [r5]			@ Loads the system time in this moment.
+
+sonar_flag_delay:
+
+	ldr r4, [r5]
+	sub r4, r4, r3			@ Subtracts new time from old one.
+	cmp r4, #10
+
+	blo sonar_flag_delay	@ If difference is less than 10, keeps waiting.
+
 	ldr r2, [r1, #GPIO_DR]	@ Loads the DR register.
 
 	mov r0, r2				@ Copies bits to r0.
@@ -487,8 +512,8 @@ IRQ_HANDLER:
 	stmfd sp!, {r0-r11, lr}			@ Pushes registers into the stack.
 
 	@ Disables new interruptions while request is handled.
-	msr cpsr_c, #0x92				@ Includes new mode - IRQ.	
-									@ Also, disables regular interruptions.
+	msr cpsr_c, #0x92				@ Keeps IRQ mode while	
+									@ disables regular interruptions.
 
 	@ Loads base address to access GTP registers.
 	ldr r0,=GTP_BASE
@@ -613,10 +638,10 @@ SYSTEM_TIME:
 .skip 0x100
 STACK_USER_BASE:
 
-.skip 0x30
+.skip 0x40
 STACK_SUPERVISOR_BASE:
 
-.skip 0x30
+.skip 0x40
 STACK_IRQ_BASE:
 
 @ Auxiliar counter (clock related).

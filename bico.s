@@ -99,7 +99,7 @@ read_sonar:
 	mov r7, #16						@ Syscall to read_sonar.
 	stmfd sp!, {r0}					@ Pushes parameters to stack.
 	svc 0x0					
-    ldmfd sp!, {r11}		  		@ Pops the syscall's parameters.
+    ldmfd sp!, {r2}		  		@ Pops the syscall's parameters.
 
     ldmfd sp!, {r7, r11, pc}		@ Restore the registers and return.
 

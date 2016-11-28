@@ -32,7 +32,7 @@ int _start() {
 	
 
  
-	short distances[16];
+	int distances[16];
 	motor_cfg_t motor0;
 	motor_cfg_t motor1;
 
@@ -81,6 +81,10 @@ int _start() {
 				} while ( distances[3] < 1000 && distances[4] < 1000 );
 
 		}
+			motor0.speed = 25;
+			motor1.speed = 25;
+			set_motors_speed(&motor0, &motor1);	
+
 
 	}while ( 1 );
 
