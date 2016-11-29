@@ -44,7 +44,7 @@ RESET_HANDLER:
 	.set CALLBACK_SIZE,			 	0x7				@
 	.set ALARM_SIZE,				0x8				@
 	.set TIME_SZ, 					0x64			@ = 100 cycles.
-	.set DIST_INTERVAL, 			0x3E8			@ =  system time cycles.
+	.set DIST_INTERVAL, 			0x3E8			@ =  system time cycles.		@@@@@@@@@@@
 	.set USER_CODE_START, 			0x77802000		@ Address to user's code.
 
 	.set GTP_BASE, 					0x53FA0000		@ GTP's addresses.
@@ -67,7 +67,6 @@ RESET_HANDLER:
 	.set GPIO_DR, 					0x0
 	.set GPIO_GDIR, 				0x4
 	.set GPIO_PSR, 					0x8
-	.set GPIO_GDIR_CONFIG, 			0xFFFC003E		@ I/O settings in hexadecimal.
 
 	@@@ --------------------------------------------------------------- @@@
 	@@@ -------------------------- BITMASKS --------------------------- @@@
@@ -77,8 +76,9 @@ RESET_HANDLER:
 	.set IRQ_MODE,					0x12			@ IRQ mode.
 	.set SUPERVISOR_MODE,			0x13			@ Supervisor mode.
 	.set SYSTEM_MODE,				0x1F			@ System mode.
-
 	.set SYSTEM_NO_INTERRUPTS_MODE,	0xDF			@ System mode w/o interrupts.
+
+	.set GPIO_GDIR_CONFIG, 			0xFFFC003E		@ GPIO settings in hexadecimal.
 
 	.set CLEAR_BOTH_MOTORS_SPEEDS, 	0xFFFC0000		@ Bitmasks to GPIO_DR.
 	.set SONAR_DATA_READ_BITMASK, 	0xFFF
@@ -494,7 +494,7 @@ get_time_syscall:
 
 	b syscall_end
 
-@@ ------------------ @@@ ------------------ @
+@@ ------------------ @@@ ----------------- @
 @ SYSCALL 21 - SET TIME
 @ ------------------ @@@ ------------------ @
 set_time_syscall:
@@ -554,14 +554,14 @@ user_mode_return_callback_syscall:
 	@ Current mode - System. 
 	ldmfd sp!, {r7}					@ Restores r7 register.
 
-	msr cpsr_c, #0x13				@ Includes new mode - Supervisor.
+	msr cpsr_c, #SUPERVISOR_MODE	@ Includes new mode - Supervisor.
 	ldmfd sp!, {r1-r11, lr}			@ Pops registers from the stack.
 
-	msr cpsr_c, #0x12          		@ Includes new mode - IRQ
+	msr cpsr_c, #IRQ_MODE			@ Includes new mode - IRQ
 	b irq_past_callback
 
    
-    b syscall_end
+    b irq_past_callback
     
 @ ------------------ @@@ ------------------ @
 @ Syscall 24 - User Mode Return Alarm
@@ -571,10 +571,10 @@ user_mode_return_alarm_syscall:
 	@ Current mode - System. 
 	ldmfd sp!, {r7}					@ Restores r7 register.
 
-	msr cpsr_c, #0x13				@ Includes new mode - Supervisor.
+	msr cpsr_c, #SUPERVISOR_MODE	@ Includes new mode - Supervisor.
 	ldmfd sp!, {r1-r11, lr}			@ Pops registers from the stack.
 
-	msr cpsr_c, #0x12          		@ Includes new mode - IRQ
+	msr cpsr_c, #IRQ_MODE			@ Includes new mode - IRQ
 	b irq_past_alarm
 
 @ ------------------ @@@ ------------------ @
@@ -585,7 +585,7 @@ syscall_end:
 	@ Returns to supervisor mode, so that the correct stack is used to return 
 	@ the saved state.
 
-	msr cpsr_c, #0x13				@ Includes new mode - Supervisor.
+	msr cpsr_c, #SUPERVISOR_MODE	@ Includes new mode - Supervisor.
 
 	ldmfd sp!, {r1-r11, lr}			@ Pops registers from the stack.
 
@@ -654,7 +654,13 @@ irq_alarm_loop:
 	bgt irq_alarm_loop				@ If there are more alarms, returns to the
 									@ alarm loop.
 	
+
+
+	b irq_handler_end
+
 	b irq_callback_start
+
+
 
 alarm_reached_zero:
 
@@ -667,7 +673,7 @@ alarm_reached_zero:
 
 	@ Changes mode to User mode.
 
-	msr cpsr_c, #0x10
+	msr cpsr_c, #USER_MODE
 
 	@ Branches to user's function.
 
@@ -721,19 +727,19 @@ irq_callbacks_check:
 	ldr  r3, [r6], #4           	@ Loads the funtion pointer and updates 
 									@ address.
         
-	msr cpsr_c, #0x13				@ Includes new mode - Supervisor.
+	msr cpsr_c, #SUPERVISOR_MODE	@ Includes new mode - Supervisor.
         
 	stmfd sp!, {r1-r11, lr}			@ Pushes registers to the SVC stack.
 									@ Will later be popped in Syscall handler.
 	bl read_sonar_syscall
 	
-	msr cpsr_c, #0x12				@ Includes new mode - IRQ.
+	msr cpsr_c, #IRQ_MODE			@ Includes new mode - IRQ.
 
 	cmp r0, r2						@ Compares obtained distance with threshold.
 
 	bhs irq_past_callback			@ If it is bigger, skips the user's function.
 
-	msr cpsr_c, #0x10				@ Includes new mode - User.
+	msr cpsr_c, #USER_MODE			@ Includes new mode - User.
 
 	ldmfd sp!, {lr}					@ Saves user's lr.
 	blx r3							@ Branches to user's function.
@@ -777,13 +783,13 @@ SYSTEM_TIME:
 @ Stacks
 @ ------------------ @@@ ------------------ @
 
-.skip 0x95
+.skip 0x200
 STACK_USER_BASE:
 
-.skip 0x65
+.skip 0x200
 STACK_SUPERVISOR_BASE:
 
-.skip 0x65
+.skip 0x200
 STACK_IRQ_BASE:
 
 

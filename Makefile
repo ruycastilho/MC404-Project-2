@@ -43,6 +43,9 @@ LOCO.x: loco.o bico.o
 disk.img: SOUL.x LOCO.x
 	mksd.sh --so SOUL.x --user LOCO.x
 
+# -------------------------------------------------------- #
+# -------------------------------------------------------- #
+# ---- Added by: Ruy Castilho Barrichelo - RA: 177012 ---- #
 simulate:
 	$(ARMSIM_PLAYER) --rom=$(DUMBOOT) --sd=disk.img
 
@@ -51,6 +54,10 @@ test:
 
 player:
 	$(PLAYER) $(PLAYER_WORLDS)/simple.cfg
+
+# -------------------------------------------------------- #
+# -------------------------------------------------------- #
+# -------------------------------------------------------- #
 
 clean:
 	rm -f SOUL.x LOCO.x disk.img *.o

@@ -2,15 +2,15 @@
 // ----------------- @ Ruy Castilho Barrichelo - RA 177012 @ ---------------- \\
 
 
-// ------------------ @@@ ------------------ //
+// ----------------------------------------- //
 // Includes
-// ------------------ @@@ ------------------ //
+// ----------------------------------------- //
 #include "uoli_api.h"
 
-// ------------------ @@@ ------------------ //
+// ----------------------------------------- //
 // Defines
-// ------------------ @@@ ------------------ //
-#define DISTANCE_LIMIT 1500
+// ----------------------------------------- //
+#define DISTANCE_LIMIT 1600
 #define DISTANCE_LIMIT_TURN 200
 
 
@@ -18,9 +18,9 @@
 // ----------------------------------- CODE --------------------------------- \\
 // -------------------------------------------------------------------------- \\
 
-// ------------------ @@@ ------------------ \\
+// ----------------------------------------- \\
 // Function Headers
-// ------------------ @@@ ------------------ \\
+// ----------------------------------------- \\
 
 void segueParede(short* distances, motor_cfg_t* motor0, motor_cfg_t* motor1);
 void buscaParede(short* distances, motor_cfg_t* motor0, motor_cfg_t* motor1);
@@ -29,13 +29,17 @@ void teste();
 void teste2();
 
 
-motor_cfg_t motor1;
-motor_cfg_t motor0;
+// ----------------------------------------- \\
+// Main Function - Segue-Parede
+// ----------------------------------------- \\
 
-
-// ------------------ @@@ ------------------ \\
-// Main Function
-// ------------------ @@@ ------------------ \\
+/*
+||	Parameters: void													||
+||  Return: 0.															||
+||	Initiates Uoli behavior as inactive, so it doesn't hit an obstacle	||
+||	as soon as it stars moving. Calls buscaParede function to start 	||
+||	its movement.														||
+*/
 
 int _start() {
 
@@ -43,75 +47,40 @@ int _start() {
 	// MUDAR O LOOP DOR READ SONAR, E CONSTANTE DO CALLBACK
 	// MUDAR O POP DA BICO.S PRA NAO SOBRESCREVER O R0, OU TRATAR ISSO
 
- 
+	// Motors.
+	motor_cfg_t motor1;
+	motor_cfg_t motor0;
+
+	// Distance array.
 	int distances[16];
 
-
-
+	// Initial setup. Uoli inactive.
 	motor0.id = 0;
-	//motor0.speed = 0;
+	motor0.speed = 0;
 	motor1.id = 1;
-	//motor1.speed = 0;
-
-	//set_motors_speed(&motor0, &motor1);
-	
-	motor0.speed = 25;
-	motor1.speed = 25;
+	motor1.speed = 0;
 	set_motors_speed(&motor0, &motor1);
-	
 
-	add_alarm(teste, 100);
-	
-	do {
-		distances[3] = read_sonar(3);
-		distances[4] = read_sonar(4);
-		
-		if ( distances[3] < 1000 && distances[3] < distances[4] ) {
-				motor0.speed = 0;
-				motor1.speed = 25;
-				set_motors_speed(&motor0, &motor1);
-	
-				do {
+	// Initiate buscaParede ( Searches Wall ). Moves forward until it
+	// finds an obstacle.
+	buscaParede();
 
-					distances[3] = read_sonar(3);
-					distances[4] = read_sonar(4);
-				} while ( distances[3] < 1000 && distances[4] < 1000 );
-
-		}
-
-
-		else if ( distances[4] < 1000 ) {
-
-				motor0.speed = 25;
-				motor1.speed = 0;
-				set_motors_speed(&motor0, &motor1);
-
-				do {
-
-					distances[3] = read_sonar(3);
-					distances[4] = read_sonar(4);
-
-				} while ( distances[3] < 1000 && distances[4] < 1000 );
-
-		}
-			motor0.speed = 25;
-			motor1.speed = 25;
-			set_motors_speed(&motor0, &motor1);	
-
-
-	}while ( 1 );
-
-
-
-while(1){
-	}	
 
 	return 0;
 }
 
-// ------------------ @@@ ------------------ \\
-// Secondary Functions
-// ------------------ @@@ ------------------ \\
+// ----------------------------------------- \\
+// Busca Parede:
+// ----------------------------------------- \\
+
+/*
+||	Parameters: Pointer to a array that stores distances.				||
+||  			Pointers to 2 motor_cfg_t (motor0, motor1) variables.	||
+||  Return: void.														||
+||	Moves forward until Uoli finds an obstacle (wall), through its 		||
+||	sonars. Once it does find it, the function calls segueParede, that	||
+||	is responsible for following said wall from that moment onwards.	||
+*/
 
 void buscaParede(short* distances, motor_cfg_t* motor0, motor_cfg_t* motor1) {
 
@@ -149,12 +118,18 @@ void buscaParede(short* distances, motor_cfg_t* motor0, motor_cfg_t* motor1) {
 
 }
 
-void teste() {
-			motor0.speed = 0;
-			motor1.speed = 0;
 
-	
-}
+// ----------------------------------------- \\
+// Segue Parede
+// ----------------------------------------- \\
+
+/*
+||	Parameters: Pointer to a array that stores distances.				||
+||  			Pointers to 2 motor_cfg_t (motor0, motor1) variables.	||
+||  Return: void.														||
+||	Sets Uoli's behavior as a wall follower. It must follow a wall  	||
+||	while remaining as parallel as it can to said wall.					||
+*/
 
 void segueParede(short* distances, motor_cfg_t* motor0, motor_cfg_t* motor1) {
 
@@ -175,5 +150,21 @@ void segueParede(short* distances, motor_cfg_t* motor0, motor_cfg_t* motor1) {
 
 
 }
+
+// ----------------------------------------- \\
+// Ronda
+// ----------------------------------------- \\
+
+/*
+||	Parameters: Pointer to a array that stores distances.				||
+||  			Pointers to 2 motor_cfg_t (motor0, motor1) variables.	||
+||  Return: void.														||
+||	Sets Uoli's behavior as a patroller. It must patrol	an area	by   	||
+||	moving in a square-like shape that grows larger.					||
+||	Also, if it finds an obstacle, it should avoid it and keep the		||
+||	described behavior.													||
+*/
+
+
 
 
