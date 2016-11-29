@@ -33,7 +33,7 @@ RESET_HANDLER:
 	.set CALLBACK_SIZE,			 	0x7
 	.set ALARM_SIZE,				0x8				@@@@@@@@ !!!!!
 	.set TIME_SZ, 					0x64	@ 1A1F8 = 107k. In this case, each cycle lasts 1 microsec.
-	.set DIST_INTERVAL, 			0x64
+	.set DIST_INTERVAL, 			0x3E8			@ =1000 cycles.
 	.set USER_CODE_START, 			0x77802000
 
 	.set CLEAR_BOTH_MOTORS_SPEEDS, 	0xFFFC0000
@@ -177,6 +177,7 @@ ET_TZIC:
 	ldr pc, = USER_CODE_START
 
 
+
 @ Syscall handler.
 SYSCALL_HANDLER:
 
@@ -203,9 +204,15 @@ SYSCALL_HANDLER:
 	cmp r7, #21						@ If is is set_time. 
 	beq set_time_syscall
 
-	cmp r8, #22						@ If it is set_alarm.
+	cmp r7, #22						@ If it is set_alarm.
 	beq set_alarm_syscall
 
+    cmp r7, #23
+    beq user_mode_return_callback_syscall
+
+	cmp r8, #24
+    beq user_mode_return_alarm_syscall
+    
 	b syscall_end					@ If syscall id is not valid.
 
 @ SYSCALL 16
@@ -235,7 +242,7 @@ read_sonar_syscall:
 	str r2, [r1, #GPIO_DR]	@ Stores the result in DR.
 
 
-	@ 15ms delay. Waits for 20 clock cycles, that equals 20ms (safety measure).
+	@ 15ms delay. Waits for 1 clock cycle, that lasts more than 15ms.
 
 	ldr r5, = SYSTEM_TIME
 	ldr r3, [r5]			@ Loads the system time in this moment.
@@ -244,15 +251,15 @@ sonar_mux_delay:
 
 	ldr r4, [r5]
 	sub r4, r4, r3			@ Subtracts new time from old one.
-	cmp r4, #15
+	cmp r4, #1
 
-	blo sonar_mux_delay	@ If difference is less than 20, keeps waiting.
+	blo sonar_mux_delay	@ If difference is less than 1, keeps waiting.
 
 	orr r2, r2, #2			@ Sets the trigger pin as 1.
 
 	str r2, [r1, #GPIO_DR]
 
-	@ 15ms delay. Waits for 20 clock cycles, that equals 20ms (safety measure).
+	@ 15ms delay. Waits for 1 clock cycle, that lasts more than 15ms.
 
 	ldr r3, [r5]			@ Loads the system time in this moment.
 
@@ -260,9 +267,9 @@ sonar_trigger_delay:
 
 	ldr r4, [r5]
 	sub r4, r4, r3			@ Subtracts new time from old one.
-	cmp r4, #15
+	cmp r4, #1
 
-	blo sonar_trigger_delay	@ If difference is less than 20, keeps waiting.
+	blo sonar_trigger_delay	@ If difference is less than 1, keeps waiting.
 
 	bic r2, r2, #2			@ Clears the second bit.
 	str r2, [r1, #GPIO_DR]	@ Sets trigger as 0.
@@ -270,19 +277,6 @@ sonar_trigger_delay:
 
 	@ Checks if flag pin was set to 1.
 sonar_flag:
-
-	@ 10ms delay. Waits for 10 clock cycles, that equals 10ms.
-
-	ldr r3, [r5]			@ Loads the system time in this moment.
-
-sonar_flag_delay:
-
-	ldr r4, [r5]
-	sub r4, r4, r3			@ Subtracts new time from old one.
-	cmp r4, #10
-
-	blo sonar_flag_delay	@ If difference is less than 10, keeps waiting.
-
 	ldr r2, [r1, #GPIO_DR]	@ Loads the DR register.
 
 	mov r0, r2				@ Copies bits to r0.
@@ -343,7 +337,7 @@ register_callback_find_last:
 									@ Updates address.
 	strh r1, [r5], #2				@ Stores the distance (2bytes) in the callback,
 									@ Updates address.		
-	str r2, [r5], #2				@ Stores the pointer (4bytes) in the callback,
+	str r2, [r5]					@ Stores the pointer (4bytes) in the callback,
 									@ Updates address.		
 
 	mov r0, #0						@ Parameters are valid. Returns 0.
@@ -490,6 +484,27 @@ alarm_find_unused:
 	str r1, [r4]				@ Stores time value in new alarm.
 	str r0, [r4, #4]			@ Stores pointer in new alarm.
 
+    b syscall_end
+    
+@ SYSCALL 23
+user_mode_return_callback_syscall:
+
+     msr cpsr_c, #0x1F			@ Includes new mode - System.   
+     ldmfd sp!, {r7}
+     msr cpsr_c, #0x12          @ Includes new mode - IRQ
+     b irq_past_callback
+
+   
+    b syscall_end
+    
+@ SYSCALL 24
+user_mode_return_alarm_syscall:
+
+     msr cpsr_c, #0x1F			@ Includes new mode - System.   
+     ldmfd sp!, {r7}
+     msr cpsr_c, #0x12          @ Includes new mode - IRQ
+     b irq_past_alarm
+
 syscall_end:
 
 	@ Returns to supervisor mode, so that the correct stack is used to return the
@@ -531,24 +546,17 @@ IRQ_HANDLER:
     add r0, r0, #1			@ Increments value by 1.
     str r0,[r2]				@ Stores updated value.
 
-
-
-
-	b irq_handler_end
-
-
-
 	@ Checks and updates alarms.
 
 	ldr r4,= alarm_quantity	@ Loads address to amount of alarms.
 	ldr r4, [r4]			@ Loads amount of alarms.
 	cmp r4, #0
 
-	beq irq_checks_callbacks
+	beq irq_callback_start
 
 	ldr r5, = alarm_vector	@ Loads address to alarm vector.
 	ldr r3, = MAX_ALARMS	@ Loads the maximum amount of alarms
-	ldr r3, [r3]			@ Initializes counter with maximum amount of alarms.
+							@ Initializes counter with maximum amount of alarms.
 
 irq_alarm_loop:
 
@@ -559,44 +567,47 @@ irq_alarm_loop:
 	addeq r5, r5, #ALARM_SIZE	@ If it is unused, skips to the next.
 	beq irq_alarm_loop
 
-	sub r6, r0					@ Compares to system time (in r0).
-	cmp r6, #0					@ Checks if it is zero.
-	moveq r6, #-1				@ If it is, changes to time and stores -1.
-
-	ldr r6, [r5]				@ Stores updated time.
-
-	beq alarm_reached_zero		@ Also, the user function is called.
+								@ Compares to system time (in r0).
+	cmp r6, r0					@ Checks if it is zero.
+	beq alarm_reached_zero		@ If yes, the user function is called.
 
 	cmp r3, #0
 	bgt irq_alarm_loop			@ If there are more alarms, returns to the
 								@ alarm loop.
+	b irq_handler_end
 
 alarm_reached_zero:
 
-	@ Changes mode to System mode.
+	mov r6, #-1					@ If it is, changes to time and stores -1.
+	str r6, [r5]
 
-	msr cpsr_c, #0x1F			@ Includes new mode - System.
+    ldmfd sp!, {r0-r12, lr}
 
-	stmfd sp!, {lr}				@ Stores system's lr.
+	ldr r3, [r5, #4]			@ Loads pointer to function.
+
+	@ Changes mode to User mode.
+
+	msr cpsr_c, #0x10			@ Includes new mode - User.
 
 	@ Branches to user's function.
 
-	ldr r4, [r5, #4]			@ Loads pointer to function.
+    ldmfd sp!, {lr}
 	blx	r4						@ Branches with link to return.
-								@ User's code will return to this point,
-								@ since user's lr was changed.
+    stmfd sp!, {lr}
 
-	ldmfd sp!, {lr}				@ Restores system's lr.
+    stmfd sp!, {r7}
 
-	@ Changes mode to Supervisor mode.
-
-	msr cpsr_c, #0x13			@ Includes new mode - Supervisor.
+    mov r7, #24
+    svc 0x0
+        
+irq_past_alarm:
 
 	cmp r3, #0
 	bgt irq_alarm_loop			@ If there are more alarms, returns to the
 								@ alarm loop.
 
-irq_checks_callbacks:
+
+irq_callback_start:
 
 	@ Checks and updates callbacks.
 
@@ -606,17 +617,51 @@ irq_checks_callbacks:
 	cmp r5, #0					@ If it is zero, skips the verifications.
 	beq irq_handler_end
 
-	add r5, r5, #1			@ Updates counter.
-	cmp r5, #DIST_INTERVAL	@ Compares counter to DIST_INTERVAL.
+    ldr r6, =callback_counter
+    ldr r4, [r6] 
+	add r4, r4, #1			@ Updates counter.
+	cmp r4, #DIST_INTERVAL	@ Compares counter to DIST_INTERVAL.
 
-	moveq r5, #0			@ If counter reached DIST_INTERVAL, it becomes 0.
-	str r5, [r4]			@ Stores new value in callback_counter.
+	moveq r4, #0			@ If counter reached DIST_INTERVAL, it becomes 0.
+	str r4, [r6]			@ Stores new value in callback_counter.
 
 	bne irq_handler_end		@ If counter is different to DIST_INTERVAL,
 							@ skips to end. Else, checks callbacks
 
+	
+	ldr r6, =callback_vector         @ Loads the callback vector
 
-	@ checar callbacks
+irq_callbacks_check:    
+        ldrb r1, [r6], #1            @ Loads the sonar id and updates address
+        ldrh r2, [r6], #2            @ Loads the distance and updates address
+        ldr  r3, [r6], #4            @ Loads the funtion pointer and updates address
+        
+        msr cpsr_c, #0x13			@ Includes new mode - Supervisor.
+        
+        stmfd sp!, {r1-r11, lr}
+
+        bl read_sonar_syscall
+	
+        msr cpsr_c, #0x12			@ Includes new mode - IRQ.
+
+        cmp r0, r2
+
+        bhs irq_past_callback
+
+        msr cpsr_c, #0x10			@ Includes new mode - User.
+
+        ldmfd sp!, {lr}
+        blx r3
+        stmfd sp!, {lr}
+
+        stmfd sp!, {r7}
+        mov r7, #23
+        svc 0x0
+        
+irq_past_callback:
+        sub r5, r5, #1
+        cmp r5, #0
+        bne irq_callbacks_check
 
 irq_handler_end:
 	ldmfd sp!, {r0-r11, lr}	@ Pops registers from the stack.

@@ -17,24 +17,21 @@ void segueParede(short* distances, motor_cfg_t* motor0, motor_cfg_t* motor1);
 void buscaParede(short* distances, motor_cfg_t* motor0, motor_cfg_t* motor1);
 void reverse(short* distances, motor_cfg_t* motor0, motor_cfg_t* motor1);
 void teste();
+void teste2();
 
-int a =1;
-
+motor_cfg_t motor1;
+motor_cfg_t motor0;
 
 
 int _start() {
 
 
-
+	// MUDAR O LOOP DOR READ SONAR, E CONSTANTE DO CALLBACK
 	// MUDAR O POP DA BICO.S PRA NAO SOBRESCREVER O R0, OU TRATAR ISSO
-
-
-	
 
  
 	int distances[16];
-	motor_cfg_t motor0;
-	motor_cfg_t motor1;
+
 
 
 	motor0.id = 0;
@@ -48,6 +45,9 @@ int _start() {
 	motor1.speed = 25;
 	set_motors_speed(&motor0, &motor1);
 	
+
+	//add_alarm(teste, 2);
+
 		
 	do {
 		distances[3] = read_sonar(3);
@@ -136,8 +136,16 @@ void buscaParede(short* distances, motor_cfg_t* motor0, motor_cfg_t* motor1) {
 }
 
 void teste() {
-	a=0;
-	
+			motor0.speed = 0;
+			motor1.speed = 0;
+			set_motors_speed(&motor0, &motor1);	
+	while(1){}
+}
+
+
+void teste2() {
+	add_alarm(teste, 14);
+
 }
 
 void segueParede(short* distances, motor_cfg_t* motor0, motor_cfg_t* motor1) {
