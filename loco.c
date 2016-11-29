@@ -46,9 +46,8 @@ int _start() {
 	set_motors_speed(&motor0, &motor1);
 	
 
-	//add_alarm(teste, 2);
-
-		
+	add_alarm(teste, 100);
+	
 	do {
 		distances[3] = read_sonar(3);
 		distances[4] = read_sonar(4);
@@ -88,9 +87,7 @@ int _start() {
 
 	}while ( 1 );
 
-			motor0.speed = 0;
-			motor1.speed = 0;
-			set_motors_speed(&motor0, &motor1);	
+
 
 while(1){
 	}	
@@ -138,14 +135,8 @@ void buscaParede(short* distances, motor_cfg_t* motor0, motor_cfg_t* motor1) {
 void teste() {
 			motor0.speed = 0;
 			motor1.speed = 0;
-			set_motors_speed(&motor0, &motor1);	
-	while(1){}
-}
 
-
-void teste2() {
-	add_alarm(teste, 14);
-
+	
 }
 
 void segueParede(short* distances, motor_cfg_t* motor0, motor_cfg_t* motor1) {
