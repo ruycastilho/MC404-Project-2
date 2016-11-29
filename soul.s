@@ -63,7 +63,7 @@ RESET_HANDLER:
     .set TZIC_PRIOMASK,         	0xC
     .set TZIC_PRIORITY9,        	0x424
 
-	.set GPIO_BASE, 				x53F84000    	@ GPIO's addresses
+	.set GPIO_BASE, 				0x53F84000    	@ GPIO's addresses
 	.set GPIO_DR, 					0x0
 	.set GPIO_GDIR, 				0x4
 	.set GPIO_PSR, 					0x8

@@ -1,17 +1,26 @@
-// MC404 - Trabalho 2 - Subcamada LoCo - Segue-Parede
-// Ruy Castilho Barrichelo - RA 177012
+// ----------------- @ MC404 - Trabalho 2 - Subcamada LoCo @ ---------------- \\ 
+// ----------------- @ Ruy Castilho Barrichelo - RA 177012 @ ---------------- \\
 
 
-// INCLUDES
+// ------------------ @@@ ------------------ //
+// Includes
+// ------------------ @@@ ------------------ //
 #include "uoli_api.h"
 
-// DEFINES
-
+// ------------------ @@@ ------------------ //
+// Defines
+// ------------------ @@@ ------------------ //
 #define DISTANCE_LIMIT 1500
 #define DISTANCE_LIMIT_TURN 200
 
 
-// CODE
+// -------------------------------------------------------------------------- \\
+// ----------------------------------- CODE --------------------------------- \\
+// -------------------------------------------------------------------------- \\
+
+// ------------------ @@@ ------------------ \\
+// Function Headers
+// ------------------ @@@ ------------------ \\
 
 void segueParede(short* distances, motor_cfg_t* motor0, motor_cfg_t* motor1);
 void buscaParede(short* distances, motor_cfg_t* motor0, motor_cfg_t* motor1);
@@ -19,9 +28,14 @@ void reverse(short* distances, motor_cfg_t* motor0, motor_cfg_t* motor1);
 void teste();
 void teste2();
 
+
 motor_cfg_t motor1;
 motor_cfg_t motor0;
 
+
+// ------------------ @@@ ------------------ \\
+// Main Function
+// ------------------ @@@ ------------------ \\
 
 int _start() {
 
@@ -95,6 +109,9 @@ while(1){
 	return 0;
 }
 
+// ------------------ @@@ ------------------ \\
+// Secondary Functions
+// ------------------ @@@ ------------------ \\
 
 void buscaParede(short* distances, motor_cfg_t* motor0, motor_cfg_t* motor1) {
 
