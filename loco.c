@@ -8,11 +8,11 @@
 #include "uoli_api.h"
 
 // ----------------------------------------- //
-// Defines
+// Constants
 // ----------------------------------------- //
-#define DISTANCE_LIMIT 1600
-#define DISTANCE_LIMIT_TURN 200
-
+#define DISTANCE_THRESHOLD 800
+#define DISTANCE_THRESHOLD_TURN 400
+#define SONAR_ABSOLUTE_DIFFERENCE 3
 
 // -------------------------------------------------------------------------- \\
 // ----------------------------------- CODE --------------------------------- \\
@@ -22,9 +22,10 @@
 // Function Headers
 // ----------------------------------------- \\
 
-void segueParede(short* distances, motor_cfg_t* motor0, motor_cfg_t* motor1);
-void buscaParede(short* distances, motor_cfg_t* motor0, motor_cfg_t* motor1);
-void reverse(short* distances, motor_cfg_t* motor0, motor_cfg_t* motor1);
+void segueParede(int* distances, motor_cfg_t* motor0, motor_cfg_t* motor1);
+void alinhaParalelamenteParede(int* distances, motor_cfg_t* motor0,
+								 motor_cfg_t* motor1);
+void buscaParede(int* distances, motor_cfg_t* motor0, motor_cfg_t* motor1);
 void teste();
 void teste2();
 
@@ -63,7 +64,7 @@ int _start() {
 
 	// Initiate buscaParede ( Searches Wall ). Moves forward until it
 	// finds an obstacle.
-	buscaParede();
+	buscaParede(distances, &motor0, &motor1);
 
 
 	return 0;
@@ -78,18 +79,20 @@ int _start() {
 ||  			Pointers to 2 motor_cfg_t (motor0, motor1) variables.	||
 ||  Return: void.														||
 ||	Moves forward until Uoli finds an obstacle (wall), through its 		||
-||	sonars. Once it does find it, the function calls segueParede, that	||
-||	is responsible for following said wall from that moment onwards.	||
+||	sonars. Once it does find it, the function calls					||
+||	alinhaParalelamenteParede, that is responsible for aligning Uoli	||
+||	to said wall.														||
 */
 
-void buscaParede(short* distances, motor_cfg_t* motor0, motor_cfg_t* motor1) {
+void buscaParede(int* distances, motor_cfg_t* motor0, motor_cfg_t* motor1) {
 
 	// Front sonars are read to check for initial obstacles.
 	distances[3] = read_sonar(3);
 	distances[4] = read_sonar(4);
 
 	// If, initially, there's no obstacle, Uoli goes forward.
-	if ( distances[3] > DISTANCE_LIMIT && distances[4] > DISTANCE_LIMIT ) {
+	if ( distances[3] > DISTANCE_THRESHOLD &&
+		distances[4] > DISTANCE_THRESHOLD ) {
 
 		// Both motors are set to move forward.
 		motor0->speed = 25;
@@ -102,8 +105,11 @@ void buscaParede(short* distances, motor_cfg_t* motor0, motor_cfg_t* motor1) {
 			distances[3] = read_sonar(3);
 			distances[4] = read_sonar(4);
 
-		} while (distances[3] > DISTANCE_LIMIT && distances[4] > DISTANCE_LIMIT );
-	
+		} while (distances[3] > DISTANCE_THRESHOLD &&
+				 distances[4] > DISTANCE_THRESHOLD );
+
+
+		// Stops the robot.
 		motor0->speed = 0;
 		motor1->speed = 0;
 		set_motors_speed(motor0, motor1);
@@ -111,13 +117,115 @@ void buscaParede(short* distances, motor_cfg_t* motor0, motor_cfg_t* motor1) {
 
 	}
 
-	// When an obstacle is found, Uoli stars to move in parallel to it.
-	segueParede(distances, motor0, motor1);
-
-
+	// When Uoli finds a wall, alinhaParalelamenteParede is called to
+	// align the robot to said obstacle.
+	alinhaParalelamenteParede(distances, motor0, motor1);
 
 }
 
+
+// ----------------------------------------- \\
+// Alinha Paralelamente Parede:
+// ----------------------------------------- \\
+
+/*
+||	Parameters: Pointer to a array that stores distances.				||
+||  			Pointers to 2 motor_cfg_t (motor0, motor1) variables.	||
+||  Return: void.														||
+||	Turns Uoli until it is positioned as parallel as it can to a wall.	||
+||	sonars. Once it does align it, the function calls segueParede, that	||
+||	is responsible for following said wall from that moment onwards.	||
+*/
+
+void alinhaParalelamenteParede(int* distances, motor_cfg_t* motor0, motor_cfg_t* motor1) {
+
+
+	// Starts a turn to the right so that the wall remains to the left of
+	// the robot.
+	motor0->speed = 0;
+	motor1->speed = 2;
+	set_motors_speed(motor0, motor1);
+
+	// Keeps turning until the left side sonars (0;15) indicate the 
+	// alignment. It does so by calculating the difference between the 
+	// them, that should be less than a defined value to guarantee
+	// reasonable alignment. In addition, distances from both 
+	// sonars 0 and 15 have to be greater than a defined threshold.
+	do {
+		distances[0] = read_sonar(0);
+		distances[15] = read_sonar(15);
+
+	} while ( 	(( distances[0] - distances[15] > SONAR_ABSOLUTE_DIFFERENCE ) || 
+				( distances[15] - distances[0] > SONAR_ABSOLUTE_DIFFERENCE )) ||	
+				distances[0] > DISTANCE_THRESHOLD_TURN ||
+				distances[15] > DISTANCE_THRESHOLD_TURN );
+
+	motor0->speed = 0;
+	motor1->speed = 0;
+	set_motors_speed(motor0, motor1);
+
+
+
+	// After the primary alignment, a second test is made.
+	// Sonars (1: 14) are checked in 2 steps:
+	// The first one consists of checking if both of them hava vision of the
+	// wall. If they do, the second step starts; else, it is skipped.
+	// The second one consists of ajusting Uoli so that the mentioned sonars
+	// return a similar distance, aswell as the first pair tested. 
+
+	// Reads sonars 1 and 14.
+	distances[1] = read_sonar(1);
+	distances[14] = read_sonar(14);
+
+	// First step.
+	if ( distances[1] < DISTANCE_THRESHOLD &&
+		distances[14] < DISTANCE_THRESHOLD ) {
+
+		// Second step.
+
+		// Determines the direction the robot should turn to ajust its position.
+		// Then, sets the motors with the appropriate speeds. 
+
+		// In case the turn should be made to the right.
+		if ( distances[1] < distances[14] ) {
+			motor0->speed = 0;
+			motor1->speed = 1;
+			set_motors_speed(motor0, motor1);
+		}
+
+
+		// In case the turn should be made to the left.
+		else {
+			motor0->speed = 1;
+			motor1->speed = 0;
+			set_motors_speed(motor0, motor1);
+
+		}
+
+		// Ajusts position.
+		while ((( distances[1] - distances[14] > SONAR_ABSOLUTE_DIFFERENCE) || 
+				( distances[14] - distances[1] > SONAR_ABSOLUTE_DIFFERENCE )) ||	
+				distances[0] > DISTANCE_THRESHOLD_TURN ||
+				distances[15] > DISTANCE_THRESHOLD_TURN ) {
+
+			distances[1] = read_sonar(1);
+			distances[14] = read_sonar(14);
+
+		}
+	}
+
+
+	// Stops the robot, after the ajust is done.
+	motor0->speed = 0;
+	motor1->speed = 0;
+	set_motors_speed(motor0, motor1);
+
+
+	// When Uoli is parallel to the wall, the segueParede function is called
+	// to initiate the wall-follower behavior.
+	segueParede(distances, motor0, motor1);
+
+}
 
 // ----------------------------------------- \\
 // Segue Parede
@@ -127,28 +235,26 @@ void buscaParede(short* distances, motor_cfg_t* motor0, motor_cfg_t* motor1) {
 ||	Parameters: Pointer to a array that stores distances.				||
 ||  			Pointers to 2 motor_cfg_t (motor0, motor1) variables.	||
 ||  Return: void.														||
-||	Sets Uoli's behavior as a wall follower. It must follow a wall  	||
+||	Sets Uoli's behavior as a wall-follower. It must follow a wall  	||
 ||	while remaining as parallel as it can to said wall.					||
 */
 
-void segueParede(short* distances, motor_cfg_t* motor0, motor_cfg_t* motor1) {
+void segueParede(int* distances, motor_cfg_t* motor0, motor_cfg_t* motor1) {
 
-	motor0->speed = 0;
-	motor1->speed = 10;
-	set_motors_speed(motor0, motor1);
+	// Front sonars are read to check for initial obstacles.
+	distances[3] = read_sonar(3);
+	distances[4] = read_sonar(4);
 
-	do {
-		distances[0] = read_sonar(0);
-		distances[15] = read_sonar(15);
+	// If, initially, there's an obstacle, alinhaParalelamenteParede is
+	// called again..
+	if ( distances[3] < DISTANCE_THRESHOLD ||
+		 distances[4] < DISTANCE_THRESHOLD ) {
 
-	} while ( distances[0] != distances[15] && distances[0] > DISTANCE_LIMIT_TURN );
+		alinhaParalelamenteParede(distances, motor0, motor1);
 
-	motor0->speed = 0;
-	motor1->speed = 0;
-	set_motors_speed(motor0, motor1);
+	}
 
-
-
+	while (1){}
 }
 
 // ----------------------------------------- \\
@@ -157,10 +263,10 @@ void segueParede(short* distances, motor_cfg_t* motor0, motor_cfg_t* motor1) {
 
 /*
 ||	Parameters: Pointer to a array that stores distances.				||
-||  			Pointers to 2 motor_cfg_t (motor0, motor1) variables.	||
+||  			Pointers to 2 motor_cfg_t (motor0, moxtor1) variables.	||
 ||  Return: void.														||
 ||	Sets Uoli's behavior as a patroller. It must patrol	an area	by   	||
-||	moving in a square-like shape that grows larger.					||
+||	moving in a square-like spiral pattern.								||
 ||	Also, if it finds an obstacle, it should avoid it and keep the		||
 ||	described behavior.													||
 */
