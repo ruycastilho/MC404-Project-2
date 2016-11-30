@@ -44,8 +44,9 @@ RESET_HANDLER:
 	.set CALLBACK_SIZE,			 	0x7				@
 	.set ALARM_SIZE,				0x8				@
 	.set TIME_SZ, 					0x64			@ = 100 cycles.
-	.set DIST_INTERVAL, 			0x20			@ System time cycles.
+	.set DIST_INTERVAL, 			0x2				@ System time cycles.
 	.set USER_CODE_START, 			0x77802000		@ Address to user's code.
+	.set SONAR_DELAY,				0x64			@ = 100 loops.
 
 	.set GTP_BASE, 					0x53FA0000		@ GTP's addresses.
 	.set GTP_CR, 					0x0
@@ -76,7 +77,10 @@ RESET_HANDLER:
 	.set IRQ_MODE,					0x12			@ IRQ mode.
 	.set SUPERVISOR_MODE,			0x13			@ Supervisor mode.
 	.set SYSTEM_MODE,				0x1F			@ System mode.
-	.set SYSTEM_NO_INTERRUPTS_MODE,	0xDF			@ System mode w/o interrupts.
+	.set SYSTEM_NO_INTERRUPTS_MODE,	0x9F			@ System mode w/o interrupts.
+	.set USER_NO_INTERRUPTS_MODE,	0x90			@ User mode w/o interrupts.
+	.set IRQ_NO_INTERRUPTS_MODE,	0x92			@ IRQ mode w/o interrupts.
+	.set SUPER_NO_INTERRUPTS_MODE,	0x93			@ Supervisor w/o interrupts.
 
 	.set GPIO_GDIR_CONFIG, 			0xFFFC003E		@ GPIO settings in hexadecimal.
 
@@ -218,9 +222,12 @@ ET_TZIC:
 @ ------------------ @@@ ------------------ @
 SYSCALL_HANDLER:
 
+	msr cpsr_c, #SUPERVISOR_MODE		@ Includes new mode - Supervisor.
+
+
 	stmfd sp!, {r1-r11, lr}				@ Pushes registers into the stack.
 
-	msr cpsr_c, #SYSTEM_MODE			@ Includes new mode - System.
+	msr cpsr_c, #SYSTEM_MODE		@ Includes new mode - System.
 
 	@ Determination of current syscall.
 	cmp r7, #16							@ If is is read_sonar. 
@@ -283,35 +290,48 @@ read_sonar_syscall:
 	str r2, [r1, #GPIO_DR]				@ Stores the result in DR.
 
 
-	@ 15ms delay. Waits for 1 clock cycle, that lasts more than 15ms.
+	
+@	@ 15ms delay. Waits for 1 clock cycle, that lasts more than 15ms.
+@
+@	ldr r5, = SYSTEM_TIME
+@	ldr r3, [r5]						@ Loads the system time in this moment.
 
-	ldr r5, = SYSTEM_TIME
-	ldr r3, [r5]						@ Loads the system time in this moment.
+	mov r3, #0
 
 sonar_mux_delay:
 
-	ldr r4, [r5]
-	sub r4, r4, r3						@ Subtracts new time from old one.
-	cmp r4, #1
+	add r3, r3, #1
+	cmp r3, #SONAR_DELAY
 
-	blo sonar_mux_delay					@ If difference is less than 1, 
+@	ldr r4, [r5]
+@	sub r4, r4, r3						@ Subtracts new time from old one.
+@	cmp r4, #1
+
+	blo sonar_mux_delay					@ If difference is less than SONAR_DELAY,
 										@ keeps waiting.
+
 
 	orr r2, r2, #2						@ Sets the trigger pin as 1.
 
 	str r2, [r1, #GPIO_DR]
 
-	@ 15ms delay. Waits for 1 clock cycle, that lasts more than 15ms.
+@	@ 15ms delay. Waits for 1 clock cycle, that lasts more than 15ms.
+@
+@	ldr r3, [r5]						@ Loads the system time in this moment.
 
-	ldr r3, [r5]						@ Loads the system time in this moment.
+	mov r3, #0
 
 sonar_trigger_delay:
 
-	ldr r4, [r5]
-	sub r4, r4, r3						@ Subtracts new time from old one.
-	cmp r4, #1
+	add r3, r3, #1
+	cmp r3, #SONAR_DELAY
 
-	blo sonar_trigger_delay	@ If difference is less than 1, keeps waiting.
+@	ldr r4, [r5]
+@	sub r4, r4, r3						@ Subtracts new time from old one.
+	cmp r4, #1
+@
+	blo sonar_trigger_delay				@ If difference is less than SONAR_DELAY,
+										@ keeps waiting.
 
 	bic r2, r2, #2						@ Clears the second bit.
 	str r2, [r1, #GPIO_DR]				@ Sets trigger as 0.
@@ -327,6 +347,7 @@ sonar_flag:
 	cmp r2, #1							@ Checks if flag is set.
 
 	bne sonar_flag
+
 	lsr r0, r0, #6						@ Shifts bits containing sonar data.
 
 	ldr r1,= SONAR_DATA_READ_BITMASK
@@ -543,6 +564,8 @@ alarm_find_unused:
 	str r1, [r4]					@ Stores time value in new alarm.
 	str r0, [r4, #4]				@ Stores pointer in new alarm.
 
+	mov r0, #0						@ Parameters are valid. Returns 0.
+
     b syscall_end
     
 @ ------------------ @@@ ------------------ @
@@ -553,10 +576,10 @@ user_mode_return_callback_syscall:
 	@ Current mode - System. 
 	ldmfd sp!, {r7}					@ Restores r7 register.
 
-	msr cpsr_c, #SUPERVISOR_MODE	@ Includes new mode - Supervisor.
+	msr cpsr_c, #SUPER_NO_INTERRUPTS_MODE	@ Includes new mode - Supervisor.
 	ldmfd sp!, {r1-r11, lr}			@ Pops registers from the stack.
 
-	msr cpsr_c, #IRQ_MODE			@ Includes new mode - IRQ
+	msr cpsr_c, #IRQ_NO_INTERRUPTS_MODE		@ Includes new mode - IRQ
 	b irq_past_callback
 
    
@@ -570,10 +593,10 @@ user_mode_return_alarm_syscall:
 	@ Current mode - System. 
 	ldmfd sp!, {r7}					@ Restores r7 register.
 
-	msr cpsr_c, #SUPERVISOR_MODE	@ Includes new mode - Supervisor.
-	ldmfd sp!, {r1-r11, lr}			@ Pops registers from the stack.
+	msr cpsr_c, #SUPER_NO_INTERRUPTS_MODE	@ Includes new mode - Supervisor.
+	ldmfd sp!, {r1-r11, lr}					@ Pops registers from the stack.
 
-	msr cpsr_c, #IRQ_MODE			@ Includes new mode - IRQ
+	msr cpsr_c, #IRQ_NO_INTERRUPTS_MODE		@ Includes new mode - IRQ
 	b irq_past_alarm
 
 @ ------------------ @@@ ------------------ @
@@ -584,7 +607,7 @@ syscall_end:
 	@ Returns to supervisor mode, so that the correct stack is used to return 
 	@ the saved state.
 
-	msr cpsr_c, #SUPERVISOR_MODE	@ Includes new mode - Supervisor.
+	msr cpsr_c, #SUPER_NO_INTERRUPTS_MODE	@ Includes new mode - Supervisor.
 
 	ldmfd sp!, {r1-r11, lr}			@ Pops registers from the stack.
 
@@ -606,14 +629,11 @@ IRQ_HANDLER:
 	@@@ ------------------------ SYSTEM TIME -------------------------- @@@
 
 	@ Loads base address to access GTP registers.
-	ldr r0,=GTP_BASE
-
-	@ Loads GTP_SR's address.
-	ldr r0, [r0, #GTP_SR]
+	ldr r1,=GTP_BASE
 
 	@ Sets GPT_SR (status) to one(1).
 	mov r0, #0x1					@ Writes 1 to clear OF1.
-	str	r0, [r1, #GTP_SR]			@ Stores value in register
+	str	r0, [r1, #GTP_SR]			@ Stores value in register						@@@@@@
 
 	@ Updates counter.
     ldr r2, =SYSTEM_TIME			@ Loads address.
@@ -625,8 +645,8 @@ IRQ_HANDLER:
 
 	@ Checks and updates alarms.
 
-	ldr r4,= alarm_quantity			@ Loads address to amount of alarms.
-	ldr r4, [r4]					@ Loads amount of alarms.
+	ldr r8,= alarm_quantity			@ Loads address to amount of alarms.
+	ldr r4, [r8]					@ Loads amount of alarms.
 	cmp r4, #0
 
 	beq irq_callback_start
@@ -646,22 +666,21 @@ irq_alarm_loop:
 	beq irq_alarm_loop
 
 									@ Compares to system time (in r0).
-	cmp r6, r0						@ Checks if it is zero.
+	cmp r6, r0						@ Checks if they are equal.
 	beq alarm_reached_zero			@ If yes, the user function is called.
 
 	cmp r3, #0
 	bgt irq_alarm_loop				@ If there are more alarms, returns to the
 									@ alarm loop.
-	
-
-
-	b irq_handler_end
 
 	b irq_callback_start
 
 
 
 alarm_reached_zero:
+
+	sub r4, r4, #1					@ Updates alarm quantity.
+	str r4, [r8]
 
 	mov r6, #-1						@ If it is, changes to time and stores -1.
 	str r6, [r5]
@@ -672,7 +691,7 @@ alarm_reached_zero:
 
 	@ Changes mode to User mode.
 
-	msr cpsr_c, #USER_MODE
+	msr cpsr_c, #USER_NO_INTERRUPTS_MODE
 
 	@ Branches to user's function.
 
@@ -779,16 +798,22 @@ SYSTEM_TIME:
 .skip 4
 
 @ ------------------ @@@ ------------------ @
+@ System Flags								
+@ ------------------ @@@ ------------------ @
+IRQ_ACTIVE:
+.skip 4
+
+@ ------------------ @@@ ------------------ @
 @ Stacks
 @ ------------------ @@@ ------------------ @
 
-.skip 0x200
+.skip 0x100
 STACK_USER_BASE:
 
-.skip 0x200
+.skip 0x100
 STACK_SUPERVISOR_BASE:
 
-.skip 0x200
+.skip 0x100
 STACK_IRQ_BASE:
 
 

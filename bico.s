@@ -116,7 +116,9 @@ read_sonar:
 	mov r7, #16						@ Syscall to read_sonar.
 	stmfd sp!, {r0}					@ Pushes parameters to stack.
 	svc 0x0					
-    ldmfd sp!, {r2}		  			@ Pops the syscall's parameters.
+    ldmfd sp!, {r11}	  			@ Pops the syscall's parameters.
+									@ r0 contains the return value, so
+									@ it musn't be changed.
 
     ldmfd sp!, {r7, r11, pc}		@ Restore the registers and return.
 
@@ -138,7 +140,7 @@ read_sonar:
 .align 4
 read_sonars:
  
-    stmfd sp!, {r4-r11, lr}			@ Save the callee-save registers.
+    stmfd sp!, {r4-r7, r11, lr}			@ Save the callee-save registers.
 	mov r6, r0						@ Declares a counter that begins in 'start'.
 	mov r5, r2						@ Saves array address in r5.
 	mov r4, r1						@ Saves 'end' in r4.
@@ -149,6 +151,8 @@ loop:
 	stmfd sp!, {r0}					@ Pushes parameters to stack.
 	svc 0x0					
     ldmfd sp!, {r11}  				@ Pops the syscall's parameters.
+									@ r0 contains the return value, so
+									@ it musn't be changed.
 
 
 	str r0, [r5, r6, lsl #2]		@ Stores value read from sonar in the 
@@ -161,7 +165,7 @@ loop:
 									@ returns to caller. Else, returns to loop.
 	ble loop
 
-    ldmfd sp!, {r4-r7, pc}  		@ Restore the registers and return.
+    ldmfd sp!, {r4-r7, r11, pc}  		@ Restore the registers and return.
 
 
 @ ------------------ @@@ ------------------ @
@@ -241,7 +245,7 @@ add_alarm:
 .align 4
 get_time:
 
-	stmfd sp!, {r4, r7, lr}			@ Saves the callee-save registers.
+	stmfd sp!, {r0, r4, r7, lr}		@ Saves the callee-save registers.
 	
 	mov r4, r0						@ Saves the pointer 't' in r4.
 	
@@ -251,7 +255,7 @@ get_time:
 	str r0, [r4]					@ Stores the system time in the received 
 									@ variable.
 
-	ldmfd sp!, {r4, r7, pc} 		@ Restore the registers and return.
+	ldmfd sp!, {r0, r4, r7, pc} 	@ Restore the registers and return.
 
 @ ------------------ @@@ ------------------ @
 @ Set Time
