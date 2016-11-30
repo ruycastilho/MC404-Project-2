@@ -44,7 +44,7 @@ RESET_HANDLER:
 	.set CALLBACK_SIZE,			 	0x7				@
 	.set ALARM_SIZE,				0x8				@
 	.set TIME_SZ, 					0x64			@ = 100 cycles.
-	.set DIST_INTERVAL, 			0x3E8			@ =  system time cycles.		@@@@@@@@@@@
+	.set DIST_INTERVAL, 			0x20			@ System time cycles.
 	.set USER_CODE_START, 			0x77802000		@ Address to user's code.
 
 	.set GTP_BASE, 					0x53FA0000		@ GTP's addresses.
@@ -83,7 +83,7 @@ RESET_HANDLER:
 	.set CLEAR_BOTH_MOTORS_SPEEDS, 	0xFFFC0000		@ Bitmasks to GPIO_DR.
 	.set SONAR_DATA_READ_BITMASK, 	0xFFF
 	.set DR_MUX_CLEAR_BITMASK,		0x3E
-	.set CLEAR_MOTOR0_SPEED,		0x1F80000
+	.set CLEAR_MOTOR0_SPEED,		0x01F80000
 	.set CLEAR_MOTOR1_SPEED,		0xFC000000
 
 	@@@ --------------------------------------------------------------- @@@
@@ -428,9 +428,8 @@ set_motor_speed_syscall:
 
 											@ If r0 = 1,
 	bicgt r3, r3, #CLEAR_MOTOR1_SPEED		@ Clears speed pins.
-	orrgt r0, r3, r1, lsl #26				@ If r0 = 1, shifts the bits 
-											@ related to the speed to the
-											@ correct pins (26-31).
+	orrgt r0, r3, r1, lsl #26				@ Shifts the bits related to the
+											@ speed to the correct pins (26-31).
 
 	str r0, [r2, #GPIO_DR]			@ Stores the bit mask in the DR register.
 

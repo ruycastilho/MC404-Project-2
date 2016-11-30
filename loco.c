@@ -10,10 +10,10 @@
 // ----------------------------------------- //
 // Constants
 // ----------------------------------------- //
-#define DISTANCE_THRESHOLD 800
-#define DISTANCE_THRESHOLD_TURN 400
-#define SONAR_ABSOLUTE_DIFFERENCE 3
-
+#define DISTANCE_THRESHOLD 1100
+#define DISTANCE_THRESHOLD_TURN 500
+#define SONAR_ABSOLUTE_DIFFERENCE 0
+	
 // -------------------------------------------------------------------------- \\
 // ----------------------------------- CODE --------------------------------- \\
 // -------------------------------------------------------------------------- \\
@@ -55,6 +55,8 @@ int _start() {
 	// Distance array.
 	int distances[16];
 
+//	add_alarm(teste, 1);
+
 	// Initial setup. Uoli inactive.
 	motor0.id = 0;
 	motor0.speed = 0;
@@ -69,6 +71,14 @@ int _start() {
 
 	return 0;
 }
+
+
+void teste() {
+
+}
+
+
+
 
 // ----------------------------------------- \\
 // Busca Parede:
@@ -125,7 +135,7 @@ void buscaParede(int* distances, motor_cfg_t* motor0, motor_cfg_t* motor1) {
 
 
 // ----------------------------------------- \\
-// Alinha Paralelamente Parede:
+// Alinha Paralelamente Parede
 // ----------------------------------------- \\
 
 /*
@@ -143,7 +153,7 @@ void alinhaParalelamenteParede(int* distances, motor_cfg_t* motor0, motor_cfg_t*
 	// Starts a turn to the right so that the wall remains to the left of
 	// the robot.
 	motor0->speed = 0;
-	motor1->speed = 2;
+	motor1->speed = 1;
 	set_motors_speed(motor0, motor1);
 
 	// Keeps turning until the left side sonars (0;15) indicate the 
@@ -155,7 +165,9 @@ void alinhaParalelamenteParede(int* distances, motor_cfg_t* motor0, motor_cfg_t*
 		distances[0] = read_sonar(0);
 		distances[15] = read_sonar(15);
 
-	} while ( 	(( distances[0] - distances[15] > SONAR_ABSOLUTE_DIFFERENCE ) || 
+	} while ( 	read_sonar(3) < DISTANCE_THRESHOLD	|| 
+				read_sonar(4) < DISTANCE_THRESHOLD	||
+				(( distances[0] - distances[15] > SONAR_ABSOLUTE_DIFFERENCE ) || 
 				( distances[15] - distances[0] > SONAR_ABSOLUTE_DIFFERENCE )) ||	
 				distances[0] > DISTANCE_THRESHOLD_TURN ||
 				distances[15] > DISTANCE_THRESHOLD_TURN );
@@ -181,6 +193,8 @@ void alinhaParalelamenteParede(int* distances, motor_cfg_t* motor0, motor_cfg_t*
 	if ( distances[1] < DISTANCE_THRESHOLD &&
 		distances[14] < DISTANCE_THRESHOLD ) {
 
+
+		int first_step_valid = 1;
 		// Second step.
 
 		// Determines the direction the robot should turn to ajust its position.
@@ -203,27 +217,38 @@ void alinhaParalelamenteParede(int* distances, motor_cfg_t* motor0, motor_cfg_t*
 		}
 
 		// Ajusts position.
-		while ((( distances[1] - distances[14] > SONAR_ABSOLUTE_DIFFERENCE) || 
+		while ( first_step_valid &&
+				(( distances[1] - distances[14] > SONAR_ABSOLUTE_DIFFERENCE) || 
 				( distances[14] - distances[1] > SONAR_ABSOLUTE_DIFFERENCE )) ||	
 				distances[0] > DISTANCE_THRESHOLD_TURN ||
 				distances[15] > DISTANCE_THRESHOLD_TURN ) {
 
+			distances[0] = read_sonar(0);
 			distances[1] = read_sonar(1);
 			distances[14] = read_sonar(14);
+			distances[15] = read_sonar(15);
+
+			if ( distances[1] > DISTANCE_THRESHOLD ||
+				distances[14] > DISTANCE_THRESHOLD ) {
+
+				first_step_valid = 0;
+			}
+
 
 		}
+
+		// Stops the robot, after the ajust is done.
+		motor0->speed = 0;
+		motor1->speed = 0;
+		set_motors_speed(motor0, motor1);
+
 	}
-
-
-	// Stops the robot, after the ajust is done.
-	motor0->speed = 0;
-	motor1->speed = 0;
-	set_motors_speed(motor0, motor1);
 
 
 	// When Uoli is parallel to the wall, the segueParede function is called
 	// to initiate the wall-follower behavior.
 	segueParede(distances, motor0, motor1);
+
 
 }
 
@@ -242,19 +267,58 @@ void alinhaParalelamenteParede(int* distances, motor_cfg_t* motor0, motor_cfg_t*
 void segueParede(int* distances, motor_cfg_t* motor0, motor_cfg_t* motor1) {
 
 	// Front sonars are read to check for initial obstacles.
-	distances[3] = read_sonar(3);
-	distances[4] = read_sonar(4);
-
 	// If, initially, there's an obstacle, alinhaParalelamenteParede is
-	// called again..
-	if ( distances[3] < DISTANCE_THRESHOLD ||
-		 distances[4] < DISTANCE_THRESHOLD ) {
+	// called again.
+	if ( read_sonar(3) < DISTANCE_THRESHOLD ||
+		 read_sonar(4) < DISTANCE_THRESHOLD ) {
 
+		motor0->speed = 0;
+		motor1->speed = 0;
+		set_motors_speed(motor0, motor1);
 		alinhaParalelamenteParede(distances, motor0, motor1);
 
 	}
 
-	while (1){}
+	else {
+
+		motor0->speed = 10;
+		motor1->speed = 10;
+		set_motors_speed(motor0, motor1);
+
+	}
+
+	do {
+
+
+		if ( read_sonar(3) < DISTANCE_THRESHOLD ||
+			 read_sonar(4) < DISTANCE_THRESHOLD ) {
+
+			motor0->speed = 0;
+			motor1->speed = 0;
+			set_motors_speed(motor0, motor1);
+			alinhaParalelamenteParede(distances, motor0, motor1);
+
+		}
+
+
+		if ( read_sonar(2) < DISTANCE_THRESHOLD_TURN &&
+			motor1->speed < 25 ) {
+
+			motor1->speed += 1;
+			set_motor_speed(motor1);
+
+		}
+
+		if ( read_sonar(13) > DISTANCE_THRESHOLD_TURN &&
+			motor1->speed > 15 ) {
+
+			motor1->speed -= 1;
+			set_motor_speed(motor1);
+
+		}
+
+	} while ( 1 );
+
 }
 
 // ----------------------------------------- \\

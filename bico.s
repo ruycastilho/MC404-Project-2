@@ -33,9 +33,6 @@ set_motor_speed:
 	ldrb r1, [r0, #1]				@ Loads the speed field in r1.
 	ldrb r0, [r0]					@ Loads the id field in r0
 
-	cmp r1, #0						@ Compares the received id with 0
-									@ to determine which motor should be set.
-
 	mov r7, #18						@ Syscall to set_motor_speed.
 	stmfd sp!, {r0, r1}				@ Pushes parameters to stack.
 	svc 0x0					
