@@ -67,6 +67,7 @@ int _start() {
 	motor1.speed = 0;
 	set_motors_speed(&motor0, &motor1);
 
+							//// MUDAR AREA DE DADOS E CODIGO NO MAKEFILE
 	ronda();
 /*
 	// Initiate buscaParede ( Searches Wall ). Moves forward until it

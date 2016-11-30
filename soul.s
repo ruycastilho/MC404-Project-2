@@ -1,6 +1,6 @@
 @ ----------------- @ MC404 - Trabalho 2 - Subcamada SOUL @ ------------------ @ 
 @ ----------------- @ Ruy Castilho Barrichelo - RA 177012 @ ------------------ @
-@ --------------- @ Clara Pompeu de S B Carnerio - RA 166082 @ --------------- @
+@ --------------- @ Clara Pompeu de S B Carneiro - RA 166082 @ --------------- @
 
 
 @ ---------------------------------------------------------------------------- @
@@ -40,7 +40,7 @@ RESET_HANDLER:
 	@@@ NAME						VALUE					COMMENT
 
 	.set MAX_CALLBACKS, 			0x8				@ 
-	.set MAX_ALARMS, 				0x8				@
+	.set MAX_ALARMS, 				0x8				@ 
 	.set CALLBACK_SIZE,			 	0x7				@
 	.set ALARM_SIZE,				0x8				@
 	.set TIME_SZ, 					0x64			@ = 100 cycles.
@@ -133,6 +133,17 @@ RESET_HANDLER:
     mov r0,#0
     str r0,[r2]
 
+	@ Sets irq verifications as inactive.
+	@ 0 => Inactive (false) ; 1 => Active (true)
+
+	ldr r2, =IRQ_ACTIVE
+	str r0, [r2]
+
+	@ Stores the address to alarm_vector's last position in alarm_stack_pointer.
+	ldr r0, =alarm_vector
+	ldr	r2, =alarm_stack_pointer
+	str r0, [r2]
+
 	@@@ ----------------------------- GTP ----------------------------- @@@
 
 	@ Loads base address to access GTP registers.
@@ -206,6 +217,10 @@ ET_TZIC:
 	ldr r0,= GPIO_GDIR_CONFIG			@ Loads I/0 settings to r0.
 	str r0, [r1, #GPIO_GDIR]			@ Configures GDIR.
 
+	@ Sets DR as 0, as a safety measure.
+	mov r0, #0	
+	str r0, [r1, GPIO_DR]
+
 	@ Sets mode as USER.
 
 	msr cpsr_c, #USER_MODE
@@ -224,10 +239,13 @@ SYSCALL_HANDLER:
 
 	msr cpsr_c, #SUPERVISOR_MODE		@ Includes new mode - Supervisor.
 
+	stmfd sp!, {r1-r7, r12, lr}			@ Pushes registers into the stack.
 
-	stmfd sp!, {r1-r11, lr}				@ Pushes registers into the stack.
+	mrs spsr, r12						@ Saves spsr to avoid losing
+										@ previous states due to another
+										@ syscall.
 
-	msr cpsr_c, #SYSTEM_MODE		@ Includes new mode - System.
+	msr cpsr_c, #SYSTEM_MODE			@ Includes new mode - System.
 
 	@ Determination of current syscall.
 	cmp r7, #16							@ If is is read_sonar. 
@@ -289,12 +307,8 @@ read_sonar_syscall:
 
 	str r2, [r1, #GPIO_DR]				@ Stores the result in DR.
 
-
 	
-@	@ 15ms delay. Waits for 1 clock cycle, that lasts more than 15ms.
-@
-@	ldr r5, = SYSTEM_TIME
-@	ldr r3, [r5]						@ Loads the system time in this moment.
+	@ 15ms delay. Waits for SONAR_DELAY, that lasts more than 15ms.
 
 	mov r3, #0
 
@@ -303,21 +317,15 @@ sonar_mux_delay:
 	add r3, r3, #1
 	cmp r3, #SONAR_DELAY
 
-@	ldr r4, [r5]
-@	sub r4, r4, r3						@ Subtracts new time from old one.
-@	cmp r4, #1
-
 	blo sonar_mux_delay					@ If difference is less than SONAR_DELAY,
 										@ keeps waiting.
-
 
 	orr r2, r2, #2						@ Sets the trigger pin as 1.
 
 	str r2, [r1, #GPIO_DR]
 
-@	@ 15ms delay. Waits for 1 clock cycle, that lasts more than 15ms.
-@
-@	ldr r3, [r5]						@ Loads the system time in this moment.
+
+	@ 15ms delay. Waits for SONAR_DELAY, that lasts more than 15ms.
 
 	mov r3, #0
 
@@ -326,10 +334,6 @@ sonar_trigger_delay:
 	add r3, r3, #1
 	cmp r3, #SONAR_DELAY
 
-@	ldr r4, [r5]
-@	sub r4, r4, r3						@ Subtracts new time from old one.
-	cmp r4, #1
-@
 	blo sonar_trigger_delay				@ If difference is less than SONAR_DELAY,
 										@ keeps waiting.
 
@@ -576,8 +580,8 @@ user_mode_return_callback_syscall:
 	@ Current mode - System. 
 	ldmfd sp!, {r7}					@ Restores r7 register.
 
-	msr cpsr_c, #SUPER_NO_INTERRUPTS_MODE	@ Includes new mode - Supervisor.
-	ldmfd sp!, {r1-r11, lr}			@ Pops registers from the stack.
+	msr cpsr_c, #SUPERVISOR_MODE	@ Includes new mode - Supervisor.
+	ldmfd sp!, {r1-r7, r12, lr}				@ Pops registers from the stack.
 
 	msr cpsr_c, #IRQ_NO_INTERRUPTS_MODE		@ Includes new mode - IRQ
 	b irq_past_callback
@@ -593,8 +597,8 @@ user_mode_return_alarm_syscall:
 	@ Current mode - System. 
 	ldmfd sp!, {r7}					@ Restores r7 register.
 
-	msr cpsr_c, #SUPER_NO_INTERRUPTS_MODE	@ Includes new mode - Supervisor.
-	ldmfd sp!, {r1-r11, lr}					@ Pops registers from the stack.
+	msr cpsr_c, #SUPERVISOR_MODE	@ Includes new mode - Supervisor.
+	ldmfd sp!, {r1-r7, r12, lr}		@ Pops registers from the stack.
 
 	msr cpsr_c, #IRQ_NO_INTERRUPTS_MODE		@ Includes new mode - IRQ
 	b irq_past_alarm
@@ -607,9 +611,12 @@ syscall_end:
 	@ Returns to supervisor mode, so that the correct stack is used to return 
 	@ the saved state.
 
-	msr cpsr_c, #SUPER_NO_INTERRUPTS_MODE	@ Includes new mode - Supervisor.
+	msr cpsr_c, #SUPERVISOR_MODE	@ Includes new mode - Supervisor.
 
-	ldmfd sp!, {r1-r11, lr}			@ Pops registers from the stack.
+	msr spsr, r12					@ Restores spsr.								@@@ CUIDADO
+																					@@@ irq pula o MRS
+
+	ldmfd sp!, {r1-r7, r12, lr}		@ Pops registers from the stack.
 
 	movs pc, lr						@ Returns to previous mode and to previous 
 									@ code.
@@ -624,7 +631,11 @@ syscall_end:
 @ ------------------ @@@ ------------------ @
 IRQ_HANDLER:
 
-	stmfd sp!, {r0-r12, lr}			@ Pushes registers into the stack.
+	stmfd sp!, {r0-r9, r12, lr}			@ Pushes registers into the stack.
+
+	mrs r12, spsr					@ Saves spsr to avoid losing
+									@ previous states due to another
+									@ interruption.
 
 	@@@ ------------------------ SYSTEM TIME -------------------------- @@@
 
@@ -633,13 +644,22 @@ IRQ_HANDLER:
 
 	@ Sets GPT_SR (status) to one(1).
 	mov r0, #0x1					@ Writes 1 to clear OF1.
-	str	r0, [r1, #GTP_SR]			@ Stores value in register						@@@@@@
+	str	r0, [r1, #GTP_SR]			@ Stores value in register;
 
 	@ Updates counter.
     ldr r2, =SYSTEM_TIME			@ Loads address.
-    ldr r0, [r2]					@ Loads the current value.
+    ldr r0, [r2]					@ Loads the current system time.
     add r0, r0, #1					@ Increments value by 1.
-    str r0,[r2]						@ Stores updated value.
+    str r0, [r2]						@ Stores updated value.
+
+	ldr r1, =IRQ_ACTIVE				@ Checks if alarms/callbacks are
+	ldr r0, [r1]					@ already being checked.
+
+	cmp r0, #1						@ If it is, only updates time and
+	beq irl_handler_end				@ skips verifications.
+
+	mov r0, #1						@ Sets IRQ_ACTIVE as 1 (true).
+	str r0, [r1]
 
 	@@@ --------------------------- ALARMS ---------------------------- @@@
 
@@ -651,47 +671,37 @@ IRQ_HANDLER:
 
 	beq irq_callback_start
 
-	ldr r5, = alarm_vector			@ Loads address to alarm vector.
-	ldr r3, = MAX_ALARMS			@ Loads the maximum amount of alarms
-									@ Initializes counter with maximum amount
-									@ of alarms.
+	ldr r5, = alarm_stack_pointer	@ Loads address to alarm_stack_pointer.
+	ldr r9, [r5]
+	sub r9, r9, #ALARM_SIZE			@ Now, it points to the last alarm. (most
+									@ recent.
 
 irq_alarm_loop:
 
-	sub r3, r3, #1					@ Updates counter.
-	ldr r6, [r5]					@ Loads first alarm struct.
-	cmp r6, #-1
+	ldr r6, [r9]					@ Loads last alarm struct (most recent).
+									@ r6 already contains the time field.
 
-	addeq r5, r5, #ALARM_SIZE		@ If it is unused, skips to the next.
-	beq irq_alarm_loop
+    ldr r0, [r2]					@ Loads the current system time.
 
-									@ Compares to system time (in r0).
-	cmp r6, r0						@ Checks if they are equal.
-	beq alarm_reached_zero			@ If yes, the user function is called.
+	cmp r6, r0						@ Compares alarm's time to system time.
 
-	cmp r3, #0
-	bgt irq_alarm_loop				@ If there are more alarms, returns to the
-									@ alarm loop.
-
-	b irq_callback_start
-
-
-
-alarm_reached_zero:
+	bhi irq_callback_start			@ If it wasn't reached, stops
+									@ checking.
+alarm_reached_time:
 
 	sub r4, r4, #1					@ Updates alarm quantity.
 	str r4, [r8]
 
-	mov r6, #-1						@ If it is, changes to time and stores -1.
-	str r6, [r5]
+	str r9, [r5]					@ Updates alarm_stack_pointer.
+									@ This removes the most recent alarm.
 
-    stmfd sp!, {r0-r12, lr}			@ Pushes the registers from the stack.
+    stmfd sp!, {r0-r9, r12, lr}		@ Pushes the registers to the stack.
 
-	ldr r3, [r5, #4]				@ Loads pointer to function.
+	ldr r3, [r9, #4]				@ Loads pointer to function.
 
 	@ Changes mode to User mode.
 
-	msr cpsr_c, #USER_NO_INTERRUPTS_MODE
+	msr cpsr_c, #USER_MODE
 
 	@ Branches to user's function.
 
@@ -706,10 +716,9 @@ alarm_reached_zero:
         							@ and to restore user's r7.
 irq_past_alarm:
 
-    ldmfd sp!, {r0-r12, lr}			@ Pops the registers from the stack.
+    ldmfd sp!, {r0-r9, r12, lr}		@ Pops the registers from the stack.
 
-	cmp r3, #0
-	bgt irq_alarm_loop				@ If there are more alarms, returns to the
+	b irq_alarm_loop				@ If there are more alarms, returns to the
 									@ alarm loop.
 
 	@@@ ------------------------- CALLBACKS --------------------------- @@@
@@ -722,7 +731,8 @@ irq_callback_start:
 	ldr r5, [r4]
 
 	cmp r5, #0						@ If it is zero, skips the verifications.
-	beq irq_handler_end
+									@ And resets the verification flag.
+	beq irq_handler_deactivate_flag
 
     ldr r6, =callback_counter
     ldr r4, [r6] 
@@ -733,7 +743,7 @@ irq_callback_start:
 									@ becomes 0.
 	str r4, [r6]					@ Stores new value in callback_counter.
 
-	bne irq_handler_end				@ If counter is different to DIST_INTERVAL,
+	bne irq_handler_deactivate_flag	@ If counter is different to DIST_INTERVAL,
 									@ skips to end. Else, checks callbacks
 
 	
@@ -747,11 +757,15 @@ irq_callbacks_check:
         
 	msr cpsr_c, #SUPERVISOR_MODE	@ Includes new mode - Supervisor.
         
-	stmfd sp!, {r1-r11, lr}			@ Pushes registers to the SVC stack.
+	stmfd sp!, {r1-r7, r12, lr}		@ Pushes registers to the SVC stack.
 									@ Will later be popped in Syscall handler.
+
+	mrs spsr, r12					@ Saves spsr.
+									@ Will be undone in syscall_end.
+
 	bl read_sonar_syscall
 	
-	msr cpsr_c, #IRQ_MODE			@ Includes new mode - IRQ.
+	msr cpsr_c, #IRQ_NO_INTERRUPTS_MODE		@ Includes new mode - IRQ.
 
 	cmp r0, r2						@ Compares obtained distance with threshold.
 
@@ -775,8 +789,18 @@ irq_past_callback:
 
 	@@@ ---------------------- IRQ HANDLER END ------------------------ @@@
 
+irq_handler_deactivate_flag:
+
+	ldr r1, =IRQ_ACTIVE
+	mov r0, #0						@ Sets IRQ_ACTIVE as 0 (false).
+	str r0, [r1]
+
+
 irq_handler_end:
-	ldmfd sp!, {r0-r12, lr}			@ Pops registers from the stack.
+
+	msr spsr, r12					@ Restores spsr.
+
+	ldmfd sp!, {r0-r9, r12, lr}		@ Pops registers from the stack.
 
 	@ Returns with address correction.
 	@ ( LR = PC + 4 ) instead of ( LR = PC + 8 ).
@@ -840,10 +864,14 @@ callback_vector:
 .skip MAX_CALLBACKS*CALLBACK_SIZE
 
 @ ------------------ @@@ ------------------ @
-@ Alarm vector.
+@ Alarm stack.
 @ 8 structs that contain: 
 @ Time period(4 bytes), function pointer (4 bytes) in this order.
 @ Initializes with -1 in every field, to indicate is unused.
 @ ------------------ @@@ ------------------ @
 alarm_vector:
-.fill MAX_ALARMS*2, 4, -1
+.skip MAX_ALARMS*ALARM_SIZE
+
+alarm_stack_pointer:
+.skip 4
+
