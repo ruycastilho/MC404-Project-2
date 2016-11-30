@@ -219,7 +219,7 @@ ET_TZIC:
 
 	@ Sets DR as 0, as a safety measure.
 	mov r0, #0	
-	str r0, [r1, GPIO_DR]
+	str r0, [r1, #GPIO_DR]
 
 	@ Sets mode as USER.
 
@@ -241,7 +241,7 @@ SYSCALL_HANDLER:
 
 	stmfd sp!, {r1-r7, r12, lr}			@ Pushes registers into the stack.
 
-	mrs spsr, r12						@ Saves spsr to avoid losing
+	mrs r12, spsr						@ Saves spsr to avoid losing
 										@ previous states due to another
 										@ syscall.
 
@@ -535,7 +535,7 @@ set_time_syscall:
 @ ------------------ @@@ ------------------ @
 set_alarm_syscall:
 
-    ldr r0, [sp]  					@ Loads the syscall's parameters.
+	ldr r0, [sp]  					@ Loads the syscall's parameters.
 	ldr r1, [sp, #4]
 
 	@ Checks the quantity of alarms.
@@ -543,35 +543,59 @@ set_alarm_syscall:
 	ldr r3, [r2]
 	cmp r3, #MAX_ALARMS
 
-	moveq r0, #-1					@ If the amount is already maxed,
-	beq syscall_end					@ returns -1 in r0.
+	moveq r0, #-1				@ If the amount is already maxed, returns -1 in r0.
+	beq syscall_end
 
 	@ Checks if time is valid.
-	ldr r6,=SYSTEM_TIME				@ Loads address to system time.
-	ldr r6, [r6]					@ Loads the system time.
+	ldr r6,=SYSTEM_TIME			@ Loads address to system time.
+	ldr r6, [r6]				@ Loads the system time.
 
-	cmp r1, r6						@ Compares given time to system time.
-	movlt r0, #-2					@ If it is in the past, returns -2.			
+	cmp r1, r6					@ Compares given time to system time.
+	movlt r0, #-2				@ If it is in the past, returns -2.			
 	blt syscall_end
 
-	ldr r4,=alarm_vector			@ Loads the address to alarm_vector.
-	add r3, r3, #1					@ Adds the new alarm.
-	str r3, [r2]					@ Stores new amount in alarm_quantity.
+	ldr r4,=alarm_vector		@ Loads the address to alarm_vector.
+	add r3, r3, #1				@ Adds the new alarm.
+	str r3, [r2]				@ Stores new amount in alarm_quantity.
 
-alarm_find_unused:
-	ldr r3, [r4]					@ Loads first alarm.
-	cmp r3, #-1						@ Checks if is unused. ( time = -1 ).
+alarm_find_position:
+	sub r3, r3, #1                  @ Alarm quantity before addition
+	
+	cmp r3, #0                      @ Checks if alarm vector is empty
+	beq store_alarm 
+	
+seek_for_position:	
+	ldr r2, [r4]                @ Loads time of current alarm and updates address
+	cmp r2, r1                  @ Seeks for position in vector
+	addhi r4, r4, #ALARM_SIZE   
+	bhi seek_for_position       @ Repeats the logic if correct position
+								@ wasn't found.
 
-	addgt r4, #ALARM_SIZE			@ If is in use, updates address.
-	bgt alarm_find_unused
 
-	str r1, [r4]					@ Stores time value in new alarm.
-	str r0, [r4, #4]				@ Stores pointer in new alarm.
-
-	mov r0, #0						@ Parameters are valid. Returns 0.
-
-    b syscall_end
+	ldr r5, =alarm_stack_pointer    @ Loads the address of first empty position
+	ldr r5, [r5]
+	sub r6, r5, #ALARM_SIZE                   
+	
+alarm_vector_reallocate:
+	ldr r7, [r6]                 
+	str r7, [r5]
+	ldr r7, [r6, #4]
+	str r7, [r5, #4]
+	cmp r6, r4
+	subne r6, r6, #ALARM_SIZE
+	subne r5, r5, #ALARM_SIZE
+	bne alarm_vector_reallocate
+	
+store_alarm:	                   
+	str r1, [r4]				    @ Stores time value in new alarm.
+	str r0, [r4, #4]			    @ Stores pointer in new alarm.
+	ldr r5, =alarm_stack_pointer    
+	ldr r3, [r5]                    @ Updates the first empty position 
+	add r3, r3, #ALARM_SIZE
+	str r3, [r5]
     
+	b syscall_end
+      
 @ ------------------ @@@ ------------------ @
 @ Syscall 23 - User Mode Return Callback
 @ ------------------ @@@ ------------------ @
@@ -656,7 +680,7 @@ IRQ_HANDLER:
 	ldr r0, [r1]					@ already being checked.
 
 	cmp r0, #1						@ If it is, only updates time and
-	beq irl_handler_end				@ skips verifications.
+	beq irq_handler_end				@ skips verifications.
 
 	mov r0, #1						@ Sets IRQ_ACTIVE as 1 (true).
 	str r0, [r1]
@@ -760,7 +784,7 @@ irq_callbacks_check:
 	stmfd sp!, {r1-r7, r12, lr}		@ Pushes registers to the SVC stack.
 									@ Will later be popped in Syscall handler.
 
-	mrs spsr, r12					@ Saves spsr.
+	mrs r12, spsr					@ Saves spsr to avoid losing
 									@ Will be undone in syscall_end.
 
 	bl read_sonar_syscall
