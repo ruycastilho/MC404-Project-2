@@ -39,10 +39,10 @@ RESET_HANDLER:
 
 	@@@ NAME						VALUE					COMMENT
 
-	.set MAX_CALLBACKS, 			0x8				@ 
-	.set MAX_ALARMS, 				0x8				@ 
+	.set MAX_CALLBACKS, 			0x8				@ = 8 units.
+	.set MAX_ALARMS, 				0x8				@ = 8 units
 	.set CALLBACK_SIZE,			 	0xC				@ = 12 bytes.
-	.set ALARM_SIZE,				0x8				@ 
+	.set ALARM_SIZE,				0x8				@ = 8 bytes.
 	.set TIME_SZ, 					0x64			@ = 100 cycles.
 	.set DIST_INTERVAL, 			0x1				@ System time cycles.
 	.set USER_CODE_START, 			0x77802000		@ Address to user's code.
@@ -139,8 +139,8 @@ RESET_HANDLER:
 	ldr r2, =IRQ_ACTIVE
 	str r0, [r2]
 
-	@ Stores the address to alarm_vector's last position in alarm_stack_pointer.
-	ldr r0, =alarm_vector
+	@ Stores the address to alarm_stack's last position in alarm_stack_pointer.
+	ldr r0, =alarm_stack
 	ldr	r2, =alarm_stack_pointer
 	str r0, [r2]
 
@@ -560,7 +560,7 @@ set_alarm_syscall:
 	movlt r0, #-2					@ If it is in the past, returns -2.			
 	blt syscall_end
 
-	ldr r4,=alarm_vector			@ Loads the address to alarm_vector.
+	ldr r4,=alarm_stack			@ Loads the address to alarm_stack.
 	add r3, r3, #1					@ Adds the new alarm.
 	str r3, [r2]					@ Stores new amount in alarm_quantity.
 
@@ -582,7 +582,7 @@ seek_for_position:
 	ldr r5, [r5]
 	sub r6, r5, #ALARM_SIZE                   
 	
-alarm_vector_reallocate:
+alarm_stack_reallocate:
 	ldr r7, [r6]                 
 	str r7, [r5]
 	ldr r7, [r6, #4]
@@ -590,7 +590,7 @@ alarm_vector_reallocate:
 	cmp r6, r4
 	subne r6, r6, #ALARM_SIZE
 	subne r5, r5, #ALARM_SIZE
-	bne alarm_vector_reallocate
+	bne alarm_stack_reallocate
 	
 store_alarm:	                   
 	str r1, [r4]				    @ Stores time value in new alarm.
@@ -715,7 +715,8 @@ IRQ_HANDLER:
 	ldr r4, [r8]					@ Loads amount of alarms.
 	cmp r4, #0
 
-	beq irq_callback_start
+	beq irq_callback_start			@ If there are none, skips to callback
+									@ check.
 
 	ldr r5, = alarm_stack_pointer	@ Loads address to alarm_stack_pointer.
 	ldr r9, [r5]
@@ -803,26 +804,28 @@ irq_callbacks_check:
 
 	msr cpsr_c, #SYSTEM_NO_INTERRUPTS_MODE	@ Includes new mode - System.
 
-	stmfd sp!, {r1}	
-
+	stmfd sp!, {r1}					@ Pushes read_sonar parameter to the
+									@ system's stack.
 	mov r7, #16
-	svc 0x0
+	svc 0x0							@ Calls read_sonar.
 
 	msr cpsr_c, #SYSTEM_NO_INTERRUPTS_MODE	@ Includes new mode - System.
 
-	ldmfd sp!, {r1}
+	ldmfd sp!, {r1}					@ Pops the syscall's parameter.
 
 	msr cpsr_c, #IRQ_NO_INTERRUPTS_MODE		@ Includes new mode - IRQ.
 
 	cmp r0, r8						@ Compares obtained distance with threshold.
 
-	bhi irq_callback_userfunction_not_called	@ If it is bigger, skips the user's function.
+	bhi irq_callback_userfunction_not_called	@ If it is bigger, skips the
+												@ user's function.
+												@ Else:
 
 	stmfd sp!, {r0-r9, r12, lr}		@ Pushes registers to the stack.
 
 	msr cpsr_c, #SYSTEM_NO_INTERRUPTS_MODE	@ Includes new mode - System.
 
-	mov r1, lr
+	mov r1, lr						@ Saves USER's lr in r1.
 
 	msr cpsr_c, #IRQ_NO_INTERRUPTS_MODE		@ Includes new mode - IRQ.
 
@@ -866,7 +869,7 @@ irq_handler_deactivate_flag:
 
 irq_handler_end:
 
-	ldmfd sp!, {r12}				@ Pushes registers into the stack.
+	ldmfd sp!, {r12}				@ Pops registers from the stack.
 
 	msr spsr, r12					@ Restores spsr.
 
@@ -939,7 +942,7 @@ callback_vector:
 @ Time period(4 bytes), function pointer (4 bytes) in this order.
 @ Initializes with -1 in every field, to indicate is unused.
 @ ------------------ @@@ ------------------ @
-alarm_vector:
+alarm_stack:
 .skip MAX_ALARMS*ALARM_SIZE
 
 alarm_stack_pointer:

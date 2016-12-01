@@ -2,7 +2,7 @@
 # Disciplina: MC404 - 1o semestre de 2015
 # Professor: Edson Borin
 #
-# Descrição: Makefile para o segundo trabalho 
+# Descricao: Makefile para o segundo trabalho 
 # ----------------------------------------
 
 # ----------------------------------
@@ -19,6 +19,8 @@ CC_FLAGS=-g
 
 LD=arm-eabi-ld
 LD_FLAGS=-g
+
+USER_PRG=ronda.o
 
 # ----------------------------------
 # Default rule
@@ -37,27 +39,11 @@ all: disk.img
 SOUL.x: $(SOUL_OBJS)
 	$(LD) $^ -o $@ $(LD_FLAGS) --section-start=.iv=0x778005e0 -Ttext=0x77800700 -Tdata=0x77801800 -e 0x778005e0
 
-LOCO.x: loco.o bico.o
+LOCO.x: $(USER_PRG) bico.o
 	$(LD) $^ -o $@ $(LD_FLAGS) -Ttext=0x77802000
 
 disk.img: SOUL.x LOCO.x
 	mksd.sh --so SOUL.x --user LOCO.x
-
-# -------------------------------------------------------- #
-# -------------------------------------------------------- #
-# ---- Added by: Ruy Castilho Barrichelo - RA: 177012 ---- #
-simulate:
-	$(ARMSIM_PLAYER) --rom=$(DUMBOOT) --sd=disk.img
-
-test:
-	$(ARMSIM) -g --rom=$(DUMBOOT) --sd=disk.img
-
-player:
-	$(PLAYER) $(PLAYER_WORLDS)/simple.cfg
-
-# -------------------------------------------------------- #
-# -------------------------------------------------------- #
-# -------------------------------------------------------- #
 
 clean:
 	rm -f SOUL.x LOCO.x disk.img *.o
