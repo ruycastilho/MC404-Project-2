@@ -10,7 +10,7 @@
 // ----------------------------------------- //
 // Constants
 // ----------------------------------------- //
-#define DISTANCE_THRESHOLD 					800
+#define DISTANCE_THRESHOLD 					900
 #define DISTANCE_THRESHOLD_TURN 			400
 #define DISTANCE_THRESHOLD_FOLLOW		 	600
 #define SONAR_ABSOLUTE_DIFFERENCE 			1
@@ -83,29 +83,23 @@ int _start() {
 
 void buscaParede() {
 
-	// If, initially, there's no obstacle, Uoli goes forward.
-	if ( read_sonar(3) > DISTANCE_THRESHOLD &&
-		read_sonar(4) > DISTANCE_THRESHOLD ) {
+	// Both motors are set to move forward.
+	motor0.speed = 25;
+	motor1.speed = 25;
+	set_motors_speed(&motor0, &motor1);
 
-		// Both motors are set to move forward.
-		motor0.speed = 25;
-		motor1.speed = 25;
-		set_motors_speed(&motor0, &motor1);
+	// It goes forward until an obstacle is found in front of it.
+	do {
 
-		// It goes forward until an obstacle is found in front of it.
-		do {
-
-		} while (read_sonar(3) > DISTANCE_THRESHOLD &&
-				 read_sonar(4) > DISTANCE_THRESHOLD );
+	} while (read_sonar(3) > DISTANCE_THRESHOLD &&
+			 read_sonar(4) > DISTANCE_THRESHOLD );
 
 
-		// Stops the robot.
-		motor0.speed = 0;
-		motor1.speed = 0;
-		set_motors_speed(&motor0, &motor1);
+	// Stops the robot.
+	motor0.speed = 0;
+	motor1.speed = 0;
+	set_motors_speed(&motor0, &motor1);
 
-
-	}
 
 	// When Uoli finds a wall, alinhaParalelamenteParede is called to
 	// align the robot to said obstacle.
@@ -181,9 +175,6 @@ void segueParede() {
 	if ( read_sonar(3) < DISTANCE_THRESHOLD_FOLLOW ||
 		 read_sonar(4) < DISTANCE_THRESHOLD_FOLLOW ) {
 
-		motor0.speed = 0;
-		motor1.speed = 0;
-		set_motors_speed(&motor0, &motor1);
 		alinhaParalelamenteParede();
 
 	}
@@ -193,35 +184,40 @@ void segueParede() {
 	motor1.speed = 10;
 	set_motors_speed(&motor0, &motor1);
 
+	// Follows wall.
 	do {
+
+		if ( read_sonar(1) > DISTANCE_THRESHOLD_FOLLOW ) {
+
+			motor1.speed = 7;
+			motor0.speed = 10;
+			set_motors_speed(&motor0, &motor1);
+
+		}
+
+
+		else if ( read_sonar(14) > DISTANCE_THRESHOLD_FOLLOW ) {
+
+			motor1.speed = 10;
+			motor0.speed = 7;
+			set_motors_speed(&motor0, &motor1);
+
+
+		}
 
 
 		if ( read_sonar(3) < DISTANCE_THRESHOLD_FOLLOW ||
-			 read_sonar(4) < DISTANCE_THRESHOLD_FOLLOW ) {
+			read_sonar(4) < DISTANCE_THRESHOLD_FOLLOW ) {
 
+			motor1.speed = 4;
 			motor0.speed = 0;
-			motor1.speed = 0;
 			set_motors_speed(&motor0, &motor1);
-			alinhaParalelamenteParede();
+
+			while ( read_sonar(3) < DISTANCE_THRESHOLD_FOLLOW ||
+					read_sonar(4) < DISTANCE_THRESHOLD_FOLLOW ) {}
 
 		}
 
-
-		if ( read_sonar(2) > DISTANCE_THRESHOLD_FOLLOW ) {
-
-			motor1.speed = 9;
-			set_motor_speed(&motor1);
-
-		}
-
-
-		if ( read_sonar(14) > DISTANCE_THRESHOLD_FOLLOW ) {
-
-			motor1.speed = 11;
-			set_motor_speed(&motor1);
-
-
-		}
 
 
 	} while ( 1 );
