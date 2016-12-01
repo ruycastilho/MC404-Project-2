@@ -14,7 +14,7 @@
 #define DISTANCE_THRESHOLD_TURN 400
 #define DISTANCE_THRESHOLD_FOLLOW 400
 #define SONAR_ABSOLUTE_DIFFERENCE 1
-#define CURVE_TIME 10
+#define CURVE_TIME 16
 	
 // -------------------------------------------------------------------------- \\
 // ----------------------------------- CODE --------------------------------- \\
@@ -343,8 +343,8 @@ void ronda() {
 	motor1.speed = 0;
 	set_motors_speed(&motor0, &motor1);
 
-	//register_proximity_callback(3, DISTANCE_THRESHOLD, rondaDesvio);
-	//register_proximity_callback(4, DISTANCE_THRESHOLD, rondaDesvio);
+	register_proximity_callback(3, DISTANCE_THRESHOLD, rondaDesvio);
+	register_proximity_callback(4, DISTANCE_THRESHOLD, rondaDesvio);
 
 	rondaEspiral();
 
